@@ -63,7 +63,7 @@ export default function Header() {
         {/* Right side */}
         <div className="flex items-center gap-3">
           <Link
-            href="#contact"
+            href="/register"
             className="flex items-center gap-2 bg-foreground text-background px-4 py-2 rounded-full text-sm font-medium hover:bg-foreground/90 transition-colors"
           >
             Try free
