@@ -114,6 +114,7 @@ body {
   padding: 0 13px;
   color: var(--foreground);
   font-size: 14px;
+  font-family: 'Inter Tight', sans-serif;
   outline: none;
   transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
@@ -122,6 +123,123 @@ body {
   background: #fff;
   border-color: rgba(217,108,78,.5);
   box-shadow: 0 0 0 3px rgba(217,108,78,.12);
+}
+
+/* ── Custom select: remove browser chrome, add own chevron ── */
+select.auth-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238B8680' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+select.auth-input:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23D96C4E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+/* Option items — limited cross-browser but removes blue highlight on Chromium */
+select.auth-input option {
+  background: #F5F1E6;
+  color: #1A1A1A;
+  font-family: 'Inter Tight', sans-serif;
+  font-size: 14px;
+  padding: 8px 12px;
+}
+select.auth-input option:checked,
+select.auth-input option:hover {
+  background: #EFE9DA;
+  color: #1A1A1A;
+}
+
+/* ============== Custom Select (hover + cascade animation) ============== */
+.custom-select-root {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  padding-right: 36px;
+  user-select: none;
+}
+
+.custom-select-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  color: var(--muted);
+  transition: transform .22s ease, color .18s ease;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+.custom-select-chevron--open {
+  transform: translateY(-50%) rotate(180deg);
+  color: var(--accent);
+}
+
+/* Panel */
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.96); }
+  to   { opacity: 1; transform: translateY(0)   scaleY(1); }
+}
+
+.custom-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #F5F1E6;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  list-style: none;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.06);
+  transform-origin: top center;
+  animation: panelIn .18s cubic-bezier(.22,.68,0,1.2) forwards;
+}
+
+/* Cascade: each option slides in with staggered delay */
+@keyframes optionIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.custom-select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 13px;
+  font-size: 14px;
+  font-family: 'Inter Tight', sans-serif;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+  opacity: 0;
+  animation: optionIn .18s ease forwards;
+  animation-delay: calc(var(--i, 0) * 48ms);
+}
+.custom-select-option:hover {
+  background: rgba(217,108,78,.08);
+  color: var(--accent);
+}
+.custom-select-option--active {
+  color: var(--accent);
+  font-weight: 500;
+}
+.custom-select-option--active:hover {
+  background: rgba(217,108,78,.10);
 }
 .auth-oauth-btn {
   height: 42px;
