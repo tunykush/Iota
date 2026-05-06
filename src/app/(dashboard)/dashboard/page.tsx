@@ -47,7 +47,7 @@ function TypeBadge({ type }: { type: string }) {
 
 export default function DashboardPage() {
   return (
-    <div className="p-4 lg:p-8 max-w-6xl mx-auto">
+    <div className="w-full max-w-6xl mx-auto overflow-x-hidden p-4 lg:p-8">
 
       {/* ── Page header ── */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-8 pb-5 border-b border-black/10">
@@ -108,7 +108,7 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          <div className="border border-black/10 rounded-sm overflow-hidden">
+          <div className="hidden md:block border border-black/10 rounded-sm overflow-hidden">
             {/* Table header */}
             <div className="grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-2.5 bg-black/[0.03] border-b border-black/10 text-[9px] font-mono text-muted tracking-widest uppercase">
               <span>Name</span>
@@ -135,6 +135,36 @@ export default function DashboardPage() {
                   {doc.chunks > 0 ? doc.chunks.toLocaleString() : "—"}
                 </span>
                 <span className="text-right text-[10px] text-muted font-mono">{doc.date.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="md:hidden space-y-2">
+            {RECENT_DOCS.map((doc) => (
+              <div key={doc.name} className="border border-black/10 rounded-sm p-3 bg-white/20">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <svg className="w-3.5 h-3.5 text-muted flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="min-w-0 break-words text-xs leading-relaxed">{doc.name}</span>
+                  </div>
+                  <StatusBadge status={doc.status} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-[10px] font-mono text-muted">
+                  <div>
+                    <div className="tracking-widest uppercase mb-1">Type</div>
+                    <TypeBadge type={doc.type} />
+                  </div>
+                  <div>
+                    <div className="tracking-widest uppercase mb-1">Chunks</div>
+                    <div>{doc.chunks > 0 ? doc.chunks.toLocaleString() : "—"}</div>
+                  </div>
+                  <div>
+                    <div className="tracking-widest uppercase mb-1">Date</div>
+                    <div>{doc.date.slice(5)}</div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -239,7 +269,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Footer meta ── */}
-      <div className="mt-10 pt-5 border-t border-black/10 flex items-center justify-between text-[9px] font-mono text-muted tracking-widest uppercase">
+      <div className="mt-10 pt-5 border-t border-black/10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[9px] font-mono text-muted tracking-widest uppercase">
         <span>iota · dashboard · vol. 01</span>
         <span>10.7626° N · 106.6602° E</span>
         <span>v1.4.0</span>
