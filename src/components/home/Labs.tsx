@@ -1,63 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-const useCases = [
-  {
-    number: "N° 01",
-    year: "2026",
-    type: "DOCS",
-    title: "Onboarding buddy",
-    description: "Wiki + HR PDFs + runbooks. New hires ask, iota answers — with the page link.",
-    glyph: "i",
-    bg: "uc-bg-1",
-  },
-  {
-    number: "N° 02",
-    year: "2026",
-    type: "RESEARCH",
-    title: "Reading partner",
-    description: "500 papers, indexed in an hour. Cross-paper questions, citations down to the paragraph.",
-    glyph: "π",
-    bg: "uc-bg-2",
-  },
-  {
-    number: "N° 03",
-    year: "2026",
-    type: "SUPPORT",
-    title: "Tier-zero agent",
-    description: "Help center + changelog synced. Customers get instant answers; tickets get context.",
-    glyph: "?",
-    bg: "uc-bg-3",
-  },
-  {
-    number: "N° 04",
-    year: "2026",
-    type: "LEGAL",
-    title: "Clause-level search",
-    description:
-      "Every contract you've ever signed. Ask about indemnity, jurisdiction, renewal — get the exact clause.",
-    glyph: "§",
-    bg: "uc-bg-4",
-  },
-  {
-    number: "N° 05",
-    year: "2026",
-    type: "DEV",
-    title: "API knowledge",
-    description: "Swagger + RFCs + ADRs. Engineers ask in chat, iota replies with the exact endpoint and a code example.",
-    glyph: "ƒ",
-    bg: "uc-bg-5",
-  },
-];
-
-const filters = [
-  { label: "All", count: 24 },
-  { label: "Internal", count: 9 },
-  { label: "Research", count: 5 },
-  { label: "Support", count: 7 },
-  { label: "Legal", count: 3 },
-];
+import { USE_CASES, LABS_FILTERS } from "@/lib/constants";
 
 export default function Labs() {
   const [active, setActive] = useState("All");
@@ -87,7 +31,7 @@ export default function Labs() {
             write — and need every answer cited<span className="text-accent">.</span>
           </h2>
           <div className="flex flex-wrap gap-2">
-            {filters.map((filter) => (
+            {LABS_FILTERS.map((filter) => (
               <button
                 type="button"
                 key={filter.label}
@@ -120,7 +64,7 @@ export default function Labs() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          {useCases.map((u) => (
+          {USE_CASES.map((u) => (
             <a
               key={u.number}
               href="#contact"

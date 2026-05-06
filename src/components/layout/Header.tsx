@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { NAV_LINKS } from "@/lib/constants";
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -44,21 +45,18 @@ export default function Header() {
 
           {/* Nav Links - Desktop */}
           <div className="hidden lg:flex items-center gap-6 text-sm">
-            <Link href="#about" className="hover:text-accent transition-colors">
-              About
-            </Link>
-            <Link href="#capabilities" className="flex items-center gap-1 hover:text-accent transition-colors">
-              Capabilities <sup className="text-[10px] text-muted">04</sup>
-            </Link>
-            <Link href="#labs" className="flex items-center gap-1 hover:text-accent transition-colors">
-              Use cases <sup className="text-[10px] text-muted">05</sup>
-            </Link>
-            <Link href="#method" className="flex items-center gap-1 hover:text-accent transition-colors">
-              Method <sup className="text-[10px] text-muted">04</sup>
-            </Link>
-            <Link href="#contact" className="hover:text-accent transition-colors">
-              Contact
-            </Link>
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="flex items-center gap-1 hover:text-accent transition-colors"
+              >
+                {link.label}
+                {link.badge && (
+                  <sup className="text-[10px] text-muted">{link.badge}</sup>
+                )}
+              </Link>
+            ))}
           </div>
         </div>
 
@@ -94,21 +92,19 @@ export default function Header() {
       {/* Mobile menu */}
       {isMenuOpen && (
         <div className="lg:hidden border-t border-black/5 px-4 py-6 space-y-4">
-          <Link href="#about" className="block text-lg hover:text-accent transition-colors">
-            About
-          </Link>
-          <Link href="#capabilities" className="block text-lg hover:text-accent transition-colors">
-            Capabilities <span className="text-muted text-sm">04</span>
-          </Link>
-          <Link href="#labs" className="block text-lg hover:text-accent transition-colors">
-            Use cases <span className="text-muted text-sm">05</span>
-          </Link>
-          <Link href="#method" className="block text-lg hover:text-accent transition-colors">
-            Method <span className="text-muted text-sm">04</span>
-          </Link>
-          <Link href="#contact" className="block text-lg hover:text-accent transition-colors">
-            Contact
-          </Link>
+          {NAV_LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="block text-lg hover:text-accent transition-colors"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              {link.label}
+              {link.badge && (
+                <span className="text-muted text-sm ml-2">{link.badge}</span>
+              )}
+            </Link>
+          ))}
         </div>
       )}
     </header>
