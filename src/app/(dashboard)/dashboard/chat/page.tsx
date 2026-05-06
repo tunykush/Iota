@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
 import type { Message, Citation, ChatState } from "@/types";
 
@@ -90,6 +90,15 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatState, setChatState] = useState<ChatState>("idle");
   const [responseIdx, setResponseIdx] = useState(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   // Collect all citations from assistant messages
   const allCitations = useMemo(() => {
@@ -119,7 +128,11 @@ export default function ChatPage() {
       setChatState("loading");
 
       // Simulate RAG retrieval + LLM response
-      setTimeout(() => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = setTimeout(() => {
         const mock = mockResponses[responseIdx % mockResponses.length];
         const botMsg: Message = {
           id: generateId(),
@@ -131,6 +144,7 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, botMsg]);
         setChatState("idle");
         setResponseIdx((i) => i + 1);
+        timeoutRef.current = null;
       }, MOCK_DELAY);
     },
     [responseIdx],
@@ -147,10 +161,12 @@ export default function ChatPage() {
     <div className="chat-workspace">
       {/* Header */}
       <div className="p-4 lg:px-6 border-b border-black/10">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="w-4 h-px bg-accent" />
-          <span className="section-label text-[10px]">Chat workspace</span>
-          <span className="text-muted text-[10px] font-mono">· N° 02</span>
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-px bg-accent" />
+            <span className="section-label text-[10px]">Chat workspace</span>
+            <span className="text-muted text-[10px] font-mono">· N° 02</span>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-display font-medium tracking-tight">

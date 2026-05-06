@@ -1,17 +1,80 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import type { Message, ChatState } from "@/types";
 
-function citeText(s: string) {
-  return s.replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>');
+const CITATION_PATTERN = /\[(\d+)\]/g;
+const BOLD_PATTERN = /\*\*(.+?)\*\*/g;
+
+function citationKey(messageId: string, index: number, title: string, detail: string) {
+  return `${messageId}-${index}-${title}-${detail}`;
 }
 
-function formatContent(content: string) {
-  return citeText(content)
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n• /g, "<br/>• ")
-    .replace(/\n/g, "<br/>");
+function renderInlineText(text: string) {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(CITATION_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      parts.push(renderBoldText(text.slice(lastIndex, start), `text-${lastIndex}`));
+    }
+    parts.push(
+      <span key={`cite-${start}-${match[1]}`} className="cite">
+        [{match[1]}]
+      </span>,
+    );
+    lastIndex = start + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(renderBoldText(text.slice(lastIndex), `text-${lastIndex}`));
+  }
+
+  return parts;
+}
+
+function renderBoldText(text: string, keyPrefix: string) {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(BOLD_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
+    parts.push(<strong key={`${keyPrefix}-bold-${start}`}>{match[1]}</strong>);
+    lastIndex = start + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
+}
+
+function MessageContent({ content }: { content: string }) {
+  const paragraphs = content.split(/\n{2,}/);
+
+  return (
+    <div className="message-content">
+      {paragraphs.map((paragraph, paragraphIndex) => {
+        const lines = paragraph.split("\n");
+        return (
+          <p key={`${paragraphIndex}-${paragraph.slice(0, 16)}`}>
+            {lines.map((line, lineIndex) => (
+              <span key={`${paragraphIndex}-${lineIndex}`}>
+                {lineIndex > 0 && <br />}
+                {renderInlineText(line)}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 function MessageBubble({ msg }: { msg: Message }) {
@@ -19,15 +82,13 @@ function MessageBubble({ msg }: { msg: Message }) {
 
   return (
     <div className={`msg ${isUser ? "msg-user" : "msg-bot"}`}>
-      <div className="avatar">{isUser ? "U" : "ι"}</div>
+      <div className="avatar" aria-hidden="true">{isUser ? "U" : "ι"}</div>
       <div className="bubble">
-        <div
-          dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }}
-        />
+        <MessageContent content={msg.content} />
         {msg.citations && msg.citations.length > 0 && (
-          <div className="sources">
+          <div className="sources" aria-label="Referenced sources">
             {msg.citations.map((c) => (
-              <div key={c.index} className="source">
+              <div key={citationKey(msg.id, c.index, c.title, c.detail)} className="source">
                 <span className="ix">[{c.index}]</span>
                 <div>
                   <span className="nm">{c.title}</span>
@@ -57,8 +118,8 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 function TypingIndicator() {
   return (
-    <div className="msg msg-bot">
-      <div className="avatar">ι</div>
+    <div className="msg msg-bot" aria-live="polite" aria-label="Retrieving answer">
+      <div className="avatar" aria-hidden="true">ι</div>
       <div className="bubble">
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
@@ -96,7 +157,7 @@ function EmptyState() {
 function RefusalState() {
   return (
     <div className="msg msg-bot">
-      <div className="avatar">ι</div>
+      <div className="avatar" aria-hidden="true">ι</div>
       <div className="bubble">
         <div className="flex items-start gap-2">
           <svg className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,8 +178,8 @@ function RefusalState() {
 
 function ErrorState({ onRetry }: { onRetry?: () => void }) {
   return (
-    <div className="msg msg-bot">
-      <div className="avatar" style={{ background: "var(--accent-hover)" }}>!</div>
+    <div className="msg msg-bot" role="alert">
+      <div className="avatar" style={{ background: "var(--accent-hover)" }} aria-hidden="true">!</div>
       <div className="bubble">
         <div className="flex items-start gap-2">
           <div>

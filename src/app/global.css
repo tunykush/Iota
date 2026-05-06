@@ -11,6 +11,7 @@
   --accent-hover: #C45A3D;
   --muted: #8B8680;
   --card-bg: #F5F1E6;
+  --surface: rgba(255, 255, 255, 0.42);
   --dark-bg: #1A1A1A;
   --gold: #C4A24D;
   --line: rgba(0, 0, 0, 0.10);
@@ -334,6 +335,7 @@ select.auth-input option:hover {
   border: 1px solid rgba(217,108,78,.16);
   border-radius: 50%;
 }
+
 .dash-badge {
   display: inline-flex;
   align-items: center;
@@ -563,6 +565,17 @@ select.auth-input option:hover {
 }
 .msg-user .bubble { color: var(--muted); }
 
+.message-content {
+  overflow-wrap: anywhere;
+}
+.message-content p + p {
+  margin-top: 0.75em;
+}
+.message-content strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .cite {
   display: inline-flex;
   background: rgba(217, 108, 78, .14);
@@ -687,6 +700,11 @@ select.auth-input option:hover {
 .chat-composer-send:hover:not(:disabled) {
   background: var(--accent);
   transform: translateY(-1px);
+}
+.chat-composer-send:focus-visible,
+.citation-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .chat-composer-send:disabled {
   opacity: .35;

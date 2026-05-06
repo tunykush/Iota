@@ -56,6 +56,7 @@ export default function ChatComposer({
           rows={1}
           className="chat-composer-input"
           aria-label="Chat message input"
+          aria-describedby="chat-composer-help"
         />
         <button
           type="button"
@@ -73,7 +74,7 @@ export default function ChatComposer({
           )}
         </button>
       </div>
-      <div className="chat-composer-meta">
+      <div id="chat-composer-help" className="chat-composer-meta">
         <span>Shift+Enter for new line</span>
         <span>·</span>
         <span>TOP 5 retrieval</span>

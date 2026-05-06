@@ -82,7 +82,7 @@ export default function DashboardPage() {
 
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {STATS.map((s) => (
+        {STATS.map((s, index) => (
           <div key={s.label} className="dash-stat-card">
             <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-2">{s.label}</div>
             <div className={`text-2xl font-display font-medium leading-none mb-1 ${s.accent ? "text-accent" : ""}`}>
