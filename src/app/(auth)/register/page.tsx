@@ -120,7 +120,7 @@ export default function RegisterPage() {
 
             <Link
               href="/dashboard"
-              className="btn-primary w-full justify-center mt-2"
+              className="auth-primary-btn mt-2"
             >
               Create account — free
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

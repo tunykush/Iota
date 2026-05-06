@@ -259,6 +259,27 @@ select.auth-input option:hover {
   border-color: rgba(0,0,0,.18);
   transform: translateY(-1px);
 }
+.auth-primary-btn {
+  height: 44px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--foreground);
+  border: 1px solid var(--foreground);
+  border-radius: 3px;
+  color: var(--background);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  transition: background .18s ease, border-color .18s ease, color .18s ease;
+}
+.auth-primary-btn:hover {
+  background: transparent;
+  border-color: var(--foreground);
+  color: var(--foreground);
+}
 
 /* ============== Dashboard ============== */
 .dash-btn,
@@ -603,6 +624,203 @@ select.auth-input option:hover {
   place-items: center;
   font-size: 13px;
   border-radius: 50%;
+}
+
+/* ============== Chat Workspace (dashboard) ============== */
+.chat-workspace {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px);
+}
+.chat-workspace .chat-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chat-workspace .chat-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scroll-behavior: smooth;
+}
+
+/* ── Chat Composer ── */
+.chat-composer {
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 12px 16px 8px;
+}
+.chat-composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.chat-composer-input {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13.5px;
+  font-family: 'Inter Tight', sans-serif;
+  line-height: 1.5;
+  color: var(--foreground);
+  max-height: 160px;
+  min-height: 20px;
+}
+.chat-composer-input::placeholder { color: var(--muted); }
+.chat-composer-input:disabled { opacity: .5; cursor: not-allowed; }
+.chat-composer-send {
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: var(--foreground);
+  color: var(--background);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: background .18s ease, transform .18s ease;
+}
+.chat-composer-send:hover:not(:disabled) {
+  background: var(--accent);
+  transform: translateY(-1px);
+}
+.chat-composer-send:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.chat-composer-meta {
+  display: flex;
+  gap: 6px;
+  padding-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ── Citation Panel (sidebar) ── */
+.citation-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.citation-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.citation-panel-head .dot {
+  width: 7px; height: 7px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(217,108,78,.18);
+}
+.citation-panel-list {
+  display: flex;
+  flex-direction: column;
+}
+.citation-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--line-hair);
+  background: transparent;
+  cursor: pointer;
+  transition: background .14s ease;
+  font-family: 'Inter Tight', sans-serif;
+}
+.citation-item:last-child { border-bottom: none; }
+.citation-item:hover { background: rgba(217,108,78,.04); }
+.citation-item--open { background: rgba(217,108,78,.06); }
+.citation-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.citation-ix {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.citation-icon { font-size: 14px; flex-shrink: 0; }
+.citation-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.citation-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.citation-detail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .06em;
+}
+.citation-score {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.citation-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform .18s ease;
+}
+.citation-chevron--open { transform: rotate(180deg); color: var(--accent); }
+.citation-snippet {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--line-hair);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  line-height: 1.5;
+  border-radius: 2px;
+}
+
+/* ── Chat layout: main + sidebar ── */
+.chat-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  height: 100%;
+}
+@media (min-width: 1024px) {
+  .chat-layout {
+    grid-template-columns: 1fr 300px;
+    gap: 16px;
+  }
+}
+@media (min-width: 1280px) {
+  .chat-layout {
+    grid-template-columns: 1fr 340px;
+  }
 }
 
 /* ============== Capabilities terminal ============== */

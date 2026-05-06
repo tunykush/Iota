@@ -8,7 +8,7 @@ export type NavLink = {
   badge?: string;
 };
 
-// ─── Chat / About section ─────────────────────────────────────
+// ─── Chat / About section (homepage demo) ─────────────────────
 export type ChatSource = {
   ix: string;   // e.g. "[1]"
   nm: string;   // file name
@@ -18,6 +18,29 @@ export type ChatSource = {
 export type ChatMessage =
   | { type: "user"; text: string }
   | { type: "bot"; text: string; sources?: ChatSource[] };
+
+// ─── Chat workspace (dashboard) ───────────────────────────────
+export type ChatRole = "user" | "assistant";
+
+export type Citation = {
+  index: number;       // [1], [2], ...
+  sourceType: "pdf" | "url" | "db";
+  title: string;       // file name or page title
+  detail: string;      // "p. 3", "§2", "row 84", URL
+  snippet?: string;    // optional preview of the matched chunk
+  score?: number;      // retrieval confidence 0-1
+};
+
+export type Message = {
+  id: string;
+  role: ChatRole;
+  content: string;
+  citations?: Citation[];
+  timestamp: number;
+  isStreaming?: boolean;
+};
+
+export type ChatState = "idle" | "loading" | "streaming" | "error" | "refusal";
 
 // ─── Capabilities ─────────────────────────────────────────────
 export type Capability = {
