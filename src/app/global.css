@@ -96,6 +96,41 @@ body {
 }
 .btn-secondary:hover { background: #f5f5f5; transform: translateY(-1px); }
 
+.hero-cta-btn {
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  justify-content: center;
+  box-shadow: none;
+}
+
+.hero-cta-primary {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--background);
+}
+.hero-cta-primary:hover {
+  background: transparent;
+  border-color: var(--foreground);
+  color: var(--foreground);
+}
+
+.hero-cta-secondary {
+  background: rgba(255,255,255,.42);
+  color: var(--foreground);
+}
+.hero-cta-secondary:hover {
+  background: rgba(255,255,255,.72);
+  border-color: rgba(0,0,0,.18);
+}
+
+@media (max-width: 520px) {
+  .hero-cta-btn {
+    width: 100%;
+  }
+}
+
 /* ============== Auth / dashboard form controls ============== */
 .auth-label {
   display: block;

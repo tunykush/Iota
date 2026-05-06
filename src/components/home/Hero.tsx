@@ -26,13 +26,13 @@ export default function Hero() {
             </p>
 
             <div className="flex flex-wrap gap-4 mb-10">
-              <Link href="#contact" className="btn-primary">
+              <Link href="#contact" className="btn-primary hero-cta-btn hero-cta-primary">
                 Start ingesting — free
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </Link>
-              <Link href="#method" className="btn-secondary">
+              <Link href="#method" className="btn-secondary hero-cta-btn hero-cta-secondary">
                 See how it works
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

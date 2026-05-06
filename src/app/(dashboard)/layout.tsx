@@ -64,12 +64,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* ── Sidebar ── */}
       <aside
         className={`
-          fixed inset-y-0 left-0 z-50 w-[220px]
+          fixed inset-0 z-50 h-dvh w-screen
           bg-background border-r border-black/10
           flex flex-col overflow-hidden
           transition-transform duration-200
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-          lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto
+          lg:sticky lg:inset-auto lg:top-0 lg:h-screen lg:w-[220px] lg:translate-x-0 lg:z-auto
         `}
       >
         {/* Logo */}
