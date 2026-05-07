@@ -1,38 +1,45 @@
+"use client";
+
 import Link from "next/link";
+import { useDashboard } from "@/hooks/useDashboard";
+import type { Document, DocumentSourceType, DocumentStatus } from "@/lib/api/types";
 
-const STATS = [
-  { label: "Documents", value: "14", sub: "3 processing", accent: false },
-  { label: "Chunks indexed", value: "18,442", sub: "1536-d vectors", accent: false },
-  { label: "Queries today", value: "37", sub: "↑ 12 vs yesterday", accent: false },
-  { label: "Avg. answer", value: "2.8s", sub: "top-5 retrieval", accent: true },
-];
+// ─── Helpers ───────────────────────────────────────────────────
+function sourceTypeLabel(t: DocumentSourceType): string {
+  return t === "pdf" ? "PDF" : t === "website" ? "SITE" : "DB";
+}
 
-const RECENT_DOCS = [
-  { name: "Q3-board-deck.pdf", type: "PDF", status: "done", chunks: 142, date: "2026-05-06" },
-  { name: "onboarding-guide.pdf", type: "PDF", status: "done", chunks: 88, date: "2026-05-05" },
-  { name: "docs.example.com", type: "SITE", status: "processing", chunks: 0, date: "2026-05-07" },
-  { name: "metrics-q3.csv", type: "DB", status: "done", chunks: 24, date: "2026-05-04" },
-  { name: "product-spec-v2.pdf", type: "PDF", status: "failed", chunks: 0, date: "2026-05-03" },
-];
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+}
 
-const RECENT_CHATS = [
-  { q: "What did Q3 customer interviews say about onboarding?", time: "2 min ago", sources: 4 },
-  { q: "Summarise the board deck revenue section.", time: "1 hr ago", sources: 2 },
-  { q: "What are the API rate limits?", time: "3 hr ago", sources: 3 },
-];
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.floor(hrs / 24)} d ago`;
+}
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    done: "dash-badge-ok",
+function StatusBadge({ status }: { status: DocumentStatus }) {
+  const map: Record<DocumentStatus, string> = {
+    ready: "dash-badge-ok",
     processing: "dash-badge-warn",
     failed: "dash-badge-err",
   };
+  const label: Record<DocumentStatus, string> = {
+    ready: "done",
+    processing: "processing",
+    failed: "failed",
+  };
   return (
-    <span className={`dash-badge ${map[status] ?? ""}`}>
+    <span className={`dash-badge ${map[status]}`}>
       {status === "processing" && (
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1" />
       )}
-      {status}
+      {label[status]}
     </span>
   );
 }
@@ -45,7 +52,28 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+// ─── Skeleton loader ───────────────────────────────────────────
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse bg-black/[0.06] rounded-sm ${className}`} />;
+}
+
+// ─── Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const { stats, recentDocuments, recentConversations, loading, error, refetch } = useDashboard();
+
+  const queryDelta = stats
+    ? stats.queryCountToday - stats.queryCountYesterday
+    : 0;
+
+  const STATS = stats
+    ? [
+        { label: "Documents", value: stats.documentCount.toString(), sub: `${stats.processingCount} processing`, accent: false },
+        { label: "Chunks indexed", value: stats.chunkCount.toLocaleString(), sub: "1536-d vectors", accent: false },
+        { label: "Queries today", value: stats.queryCountToday.toString(), sub: `${queryDelta >= 0 ? "↑" : "↓"} ${Math.abs(queryDelta)} vs yesterday`, accent: false },
+        { label: "Avg. answer", value: `${(stats.avgAnswerMs / 1000).toFixed(1)}s`, sub: "top-5 retrieval", accent: true },
+      ]
+    : null;
+
   return (
     <div className="w-full max-w-6xl mx-auto overflow-x-hidden p-4 lg:p-8">
 
@@ -58,10 +86,15 @@ export default function DashboardPage() {
             <span className="text-muted text-[10px] font-mono">· N° 01</span>
           </div>
           <h1 className="text-2xl font-display font-medium tracking-tight">
-            Good morning, Ada
-            <span className="text-accent">.</span>
+            Good morning, Ada<span className="text-accent">.</span>
           </h1>
-          <p className="text-sm text-muted mt-1">Your knowledge base is ready — 14 sources indexed.</p>
+          <p className="text-sm text-muted mt-1">
+            {loading
+              ? "Loading your knowledge base…"
+              : stats
+                ? `Your knowledge base is ready — ${stats.documentCount} sources indexed.`
+                : "Your knowledge base is ready."}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -80,17 +113,35 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ── Error banner ── */}
+      {error && (
+        <div className="mb-6 p-3 border border-red-200 bg-red-50 rounded-sm text-sm text-red-700">
+          {error} —{" "}
+          <button type="button" onClick={refetch} className="underline">
+            retry
+          </button>
+        </div>
+      )}
+
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {STATS.map((s, index) => (
-          <div key={s.label} className="dash-stat-card">
-            <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-2">{s.label}</div>
-            <div className={`text-2xl font-display font-medium leading-none mb-1 ${s.accent ? "text-accent" : ""}`}>
-              {s.value}
-            </div>
-            <div className="text-[10px] text-muted">{s.sub}</div>
-          </div>
-        ))}
+        {loading || !STATS
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="dash-stat-card">
+                <Skeleton className="h-2 w-16 mb-3" />
+                <Skeleton className="h-7 w-12 mb-2" />
+                <Skeleton className="h-2 w-20" />
+              </div>
+            ))
+          : STATS.map((s) => (
+              <div key={s.label} className="dash-stat-card">
+                <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-2">{s.label}</div>
+                <div className={`text-2xl font-display font-medium leading-none mb-1 ${s.accent ? "text-accent" : ""}`}>
+                  {s.value}
+                </div>
+                <div className="text-[10px] text-muted">{s.sub}</div>
+              </div>
+            ))}
       </div>
 
       {/* ── Two-column grid ── */}
@@ -108,8 +159,8 @@ export default function DashboardPage() {
             </Link>
           </div>
 
+          {/* Desktop table */}
           <div className="hidden md:block border border-black/10 rounded-sm overflow-hidden">
-            {/* Table header */}
             <div className="grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-2.5 bg-black/[0.03] border-b border-black/10 text-[9px] font-mono text-muted tracking-widest uppercase">
               <span>Name</span>
               <span>Type</span>
@@ -118,55 +169,74 @@ export default function DashboardPage() {
               <span className="text-right">Date</span>
             </div>
 
-            {RECENT_DOCS.map((doc, i) => (
-              <div
-                key={doc.name}
-                className={`grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-3 items-center text-sm hover:bg-black/[0.02] transition-colors ${i < RECENT_DOCS.length - 1 ? "border-b border-black/[0.06]" : ""}`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <svg className="w-3.5 h-3.5 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="truncate text-xs">{doc.name}</span>
-                </div>
-                <TypeBadge type={doc.type} />
-                <StatusBadge status={doc.status} />
-                <span className="text-right text-xs text-muted font-mono">
-                  {doc.chunks > 0 ? doc.chunks.toLocaleString() : "—"}
-                </span>
-                <span className="text-right text-[10px] text-muted font-mono">{doc.date.slice(5)}</span>
-              </div>
-            ))}
+            {loading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-3 items-center border-b border-black/[0.06] last:border-b-0">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-4 w-10" />
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-3 w-8 ml-auto" />
+                    <Skeleton className="h-3 w-10 ml-auto" />
+                  </div>
+                ))
+              : recentDocuments.map((doc: Document, i: number) => (
+                  <div
+                    key={doc.id}
+                    className={`grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-3 items-center text-sm hover:bg-black/[0.02] transition-colors ${i < recentDocuments.length - 1 ? "border-b border-black/[0.06]" : ""}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="w-3.5 h-3.5 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="truncate text-xs">{doc.title}</span>
+                    </div>
+                    <TypeBadge type={sourceTypeLabel(doc.sourceType)} />
+                    <StatusBadge status={doc.status} />
+                    <span className="text-right text-xs text-muted font-mono">
+                      {doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "—"}
+                    </span>
+                    <span className="text-right text-[10px] text-muted font-mono">
+                      {formatDate(doc.createdAt)}
+                    </span>
+                  </div>
+                ))}
           </div>
 
+          {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {RECENT_DOCS.map((doc) => (
-              <div key={doc.name} className="border border-black/10 rounded-sm p-3 bg-white/20">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <svg className="w-3.5 h-3.5 text-muted flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span className="min-w-0 break-words text-xs leading-relaxed">{doc.name}</span>
+            {loading
+              ? Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="border border-black/10 rounded-sm p-3 bg-white/20">
+                    <Skeleton className="h-3 w-40 mb-3" />
+                    <div className="grid grid-cols-3 gap-2">
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
                   </div>
-                  <StatusBadge status={doc.status} />
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-[10px] font-mono text-muted">
-                  <div>
-                    <div className="tracking-widest uppercase mb-1">Type</div>
-                    <TypeBadge type={doc.type} />
+                ))
+              : recentDocuments.map((doc: Document) => (
+                  <div key={doc.id} className="border border-black/10 rounded-sm p-3 bg-white/20">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <span className="min-w-0 break-words text-xs leading-relaxed font-medium">{doc.title}</span>
+                      <StatusBadge status={doc.status} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px] font-mono text-muted">
+                      <div>
+                        <div className="tracking-widest uppercase mb-1">Type</div>
+                        <TypeBadge type={sourceTypeLabel(doc.sourceType)} />
+                      </div>
+                      <div>
+                        <div className="tracking-widest uppercase mb-1">Chunks</div>
+                        <div>{doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "—"}</div>
+                      </div>
+                      <div>
+                        <div className="tracking-widest uppercase mb-1">Date</div>
+                        <div>{formatDate(doc.createdAt)}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="tracking-widest uppercase mb-1">Chunks</div>
-                    <div>{doc.chunks > 0 ? doc.chunks.toLocaleString() : "—"}</div>
-                  </div>
-                  <div>
-                    <div className="tracking-widest uppercase mb-1">Date</div>
-                    <div>{doc.date.slice(5)}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
+                ))}
           </div>
         </div>
 
@@ -186,21 +256,34 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-2">
-              {RECENT_CHATS.map((chat) => (
-                <Link
-                  key={chat.q}
-                  href="/dashboard/chat"
-                  className="block border border-black/10 rounded-sm p-3.5 hover:border-accent/30 hover:bg-black/[0.01] transition-colors group"
-                >
-                  <p className="text-xs leading-relaxed text-foreground/80 group-hover:text-foreground transition-colors line-clamp-2 mb-2">
-                    {chat.q}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted font-mono">{chat.time}</span>
-                    <span className="text-[10px] text-muted font-mono">{chat.sources} sources</span>
-                  </div>
-                </Link>
-              ))}
+              {loading
+                ? Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="border border-black/10 rounded-sm p-3.5">
+                      <Skeleton className="h-3 w-full mb-2" />
+                      <Skeleton className="h-3 w-3/4 mb-3" />
+                      <div className="flex justify-between">
+                        <Skeleton className="h-2 w-16" />
+                        <Skeleton className="h-2 w-16" />
+                      </div>
+                    </div>
+                  ))
+                : recentConversations.map((conv) => (
+                    <Link
+                      key={conv.id}
+                      href="/dashboard/chat"
+                      className="block border border-black/10 rounded-sm p-3.5 hover:border-accent/30 hover:bg-black/[0.01] transition-colors group"
+                    >
+                      <p className="text-xs leading-relaxed text-foreground/80 group-hover:text-foreground transition-colors line-clamp-2 mb-2">
+                        {conv.title ?? "Untitled conversation"}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted font-mono">{timeAgo(conv.updatedAt)}</span>
+                        <span className="text-[10px] text-muted font-mono">
+                          {conv.messageCount ? `${Math.floor(conv.messageCount / 2)} turns` : ""}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
             </div>
           </div>
 
