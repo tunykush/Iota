@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "@/app/(auth)/actions";
+import { chatApi, documentsApi } from "@/lib/api/client";
+import { createClient } from "@/lib/supabase/client";
+import type { Conversation } from "@/lib/api/types";
+
+type DashboardUser = {
+  email: string;
+  name: string;
+};
 
 const NAV_ITEMS = [
   {
@@ -33,7 +42,7 @@ const NAV_ITEMS = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
-    badge: "14",
+    badge: null,
   },
   {
     href: "/dashboard/upload",
@@ -47,17 +56,55 @@ const NAV_ITEMS = [
   },
 ];
 
-const RECENT_CHATS = [
-  "Q3 board report summary",
-  "Onboarding interview themes",
-  "API rate limits — docs",
-];
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [user, setUser] = useState<DashboardUser | null>(null);
+  const [documentCount, setDocumentCount] = useState(0);
+  const [recentChats, setRecentChats] = useState<Conversation[]>([]);
 
   const isSettingsActive = pathname === "/dashboard/settings";
+  const userInitial = useMemo(() => {
+    const source = user?.name || user?.email || "U";
+    return source.trim().charAt(0).toUpperCase();
+  }, [user]);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      const currentUser = data.user;
+
+      if (!currentUser?.email) {
+        setUser(null);
+        return;
+      }
+
+      const fullName = currentUser.user_metadata?.full_name as string | undefined;
+      setUser({
+        email: currentUser.email,
+        name: fullName?.trim() || currentUser.email.split("@")[0],
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    Promise.allSettled([documentsApi.list(), chatApi.listConversations()]).then(([docsResult, chatsResult]) => {
+      if (docsResult.status === "fulfilled") {
+        setDocumentCount(docsResult.value.total);
+      }
+
+      if (chatsResult.status === "fulfilled") {
+        setRecentChats(chatsResult.value.conversations.slice(0, 3));
+      }
+    });
+  }, [pathname]);
+
+  const navItems = NAV_ITEMS.map((item) =>
+    item.href === "/dashboard/documents"
+      ? { ...item, badge: documentCount > 0 ? documentCount.toString() : null }
+      : item,
+  );
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -99,7 +146,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="font-serif italic text-accent text-xs">i</span>
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-medium truncate">My workspace</div>
+              <div className="text-xs font-medium truncate">
+                {user?.name ? `${user.name}'s workspace` : "Your workspace"}
+              </div>
               <div className="text-[10px] text-muted font-mono tracking-wider">FREE PLAN</div>
             </div>
             <svg className="w-3 h-3 text-muted ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Scrollable nav area */}
         <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-0.5">
           <div className="text-[9px] font-mono text-muted tracking-widest uppercase px-2 mb-2">Navigation</div>
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
@@ -140,16 +189,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="h-px bg-black/10 my-3" />
 
           <div className="text-[9px] font-mono text-muted tracking-widest uppercase px-2 mb-2">Recent chats</div>
-          {RECENT_CHATS.map((chat) => (
-            <button
-              key={chat}
-              type="button"
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
-            >
-              <span className="font-serif italic text-accent text-sm leading-none">.</span>
-              <span className="truncate">{chat}</span>
-            </button>
-          ))}
+          {recentChats.length > 0 ? (
+            recentChats.map((chat) => (
+              <Link
+                key={chat.id}
+                href="/dashboard/chat"
+                onClick={() => setSidebarOpen(false)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
+              >
+                <span className="font-serif italic text-accent text-sm leading-none">.</span>
+                <span className="truncate">{chat.title ?? "Untitled conversation"}</span>
+              </Link>
+            ))
+          ) : (
+            <div className="px-2 py-1.5 text-[10px] text-muted">No chats yet.</div>
+          )}
         </nav>
 
         {/* ── Fixed bottom: Settings + User ── */}
@@ -180,17 +234,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* User card */}
           <div className="flex items-center gap-2.5 px-5 py-3">
             <div className="w-7 h-7 rounded-full bg-foreground flex items-center justify-center flex-shrink-0">
-              <span className="text-background text-[10px] font-medium">A</span>
+              <span className="text-background text-[10px] font-medium">{userInitial}</span>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium truncate">Ada Lovelace</div>
-              <div className="text-[10px] text-muted truncate">ada@example.com</div>
+              <div className="text-xs font-medium truncate">{user?.name ?? "Loading..."}</div>
+              <div className="text-[10px] text-muted truncate">{user?.email ?? "Checking session"}</div>
             </div>
-            <Link href="/login" className="text-muted hover:text-accent transition-colors flex-shrink-0" title="Sign out">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </Link>
+            <form action={signOut}>
+              <button type="submit" className="text-muted hover:text-accent transition-colors flex-shrink-0" title="Sign out">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </form>
           </div>
         </div>
       </aside>
@@ -230,7 +286,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-muted tracking-wider uppercase">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-              LIVE v1.4.0
+              LIVE DATA
             </div>
             <Link href="/dashboard/chat" className="dash-btn-primary h-8 px-3 text-xs">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,6 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { CustomSelect } from "@/components/ui";
+import { createClient } from "@/lib/supabase/client";
+
+type Profile = {
+  email: string;
+  name: string;
+};
 
 const GENERAL_SETTINGS = [
   {
@@ -139,6 +146,25 @@ function TogglePill({ label, enabled }: { label: string; enabled: boolean }) {
 }
 
 export default function SettingsPage() {
+  const [profile, setProfile] = useState<Profile>({ email: "", name: "" });
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (!user?.email) return;
+
+      const fullName = user.user_metadata?.full_name as string | undefined;
+      const firstName = user.user_metadata?.first_name as string | undefined;
+
+      setProfile({
+        email: user.email,
+        name: fullName?.trim() || firstName?.trim() || user.email.split("@")[0],
+      });
+    });
+  }, []);
+
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-2">
@@ -276,17 +302,17 @@ export default function SettingsPage() {
               <p className="text-sm text-muted mt-1">Display name and email shown across the dashboard.</p>
             </div>
             <span className="border border-black/10 bg-surface px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted shrink-0">
-              Mock
+              Auth data
             </span>
           </div>
           <div className="grid sm:grid-cols-2 gap-3 mb-4">
             <div className="border border-black/10 bg-surface/70 p-4">
               <label className="auth-label" htmlFor="profile-name">Display name</label>
-              <input id="profile-name" className="auth-input" defaultValue="Ada Lovelace" />
+              <input id="profile-name" className="auth-input" value={profile.name} readOnly />
             </div>
             <div className="border border-black/10 bg-surface/70 p-4">
               <label className="auth-label" htmlFor="profile-email">Email address</label>
-              <input id="profile-email" className="auth-input" type="email" defaultValue="ada@example.com" />
+              <input id="profile-email" className="auth-input" type="email" value={profile.email} readOnly />
               <p className="text-xs text-muted mt-2">Used for login and notifications.</p>
             </div>
           </div>

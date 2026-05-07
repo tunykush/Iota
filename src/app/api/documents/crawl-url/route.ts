@@ -1,10 +1,9 @@
 // POST /api/documents/crawl-url
 // Submit a URL for website ingestion (FR-020, FR-021, FR-022, FR-023)
-// Mock: validates URL, creates document + job, simulates crawl processing.
 
 import { NextRequest, NextResponse } from "next/server";
-import { mockDocuments, mockJobs, generateId, simulateDelay } from "@/lib/api/mock-db";
 import type { CrawlUrlRequest, CrawlUrlResponse } from "@/lib/api/types";
+import { createClient } from "@/lib/supabase/server";
 
 function isValidHttpUrl(raw: string): boolean {
   try {
@@ -16,7 +15,17 @@ function isValidHttpUrl(raw: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  await simulateDelay(400);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to crawl websites" } },
+      { status: 401 },
+    );
+  }
 
   let body: CrawlUrlRequest;
   try {
@@ -54,55 +63,58 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const docId = generateId("doc");
-  const jobId = generateId("job");
-  const now = new Date().toISOString();
   const displayTitle = title ?? hostname;
 
-  mockDocuments.unshift({
-    id: docId,
-    sourceType: "website",
-    title: displayTitle,
-    url,
-    status: "processing",
-    chunkCount: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  mockJobs.push({
-    id: jobId,
-    documentId: docId,
-    status: "queued",
-    stage: "extracting",
-    createdAt: now,
-  });
-
-  // Simulate async crawl: after 6 s mark as ready
-  setTimeout(() => {
-    const doc = mockDocuments.find((d) => d.id === docId);
-    const job = mockJobs.find((j) => j.id === jobId);
-    if (doc) {
-      doc.status = "ready";
-      doc.chunkCount = Math.floor(Math.random() * 80) + 10;
-      doc.updatedAt = new Date().toISOString();
-    }
-    if (job) {
-      job.status = "succeeded";
-      job.stage = "storing";
-      job.completedAt = new Date().toISOString();
-    }
-  }, 6000);
-
-  const responseBody: CrawlUrlResponse = {
-    document: {
-      id: docId,
-      sourceType: "website",
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .insert({
+      user_id: user.id,
+      source_type: "website",
       title: displayTitle,
       url,
       status: "processing",
+      chunk_count: 0,
+      metadata: { crawlDepth },
+    })
+    .select("id, title, url, status")
+    .single();
+
+  if (documentError || !document) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: documentError?.message ?? "Failed to create website document" } },
+      { status: 500 },
+    );
+  }
+
+  const { data: job, error: jobError } = await supabase
+    .from("ingestion_jobs")
+    .insert({
+      user_id: user.id,
+      document_id: document.id,
+      job_type: "website",
+      status: "queued",
+      stage: "extracting",
+      metadata: { url, crawlDepth },
+    })
+    .select("id, status")
+    .single();
+
+  if (jobError || !job) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: jobError?.message ?? "Failed to create ingestion job" } },
+      { status: 500 },
+    );
+  }
+
+  const responseBody: CrawlUrlResponse = {
+    document: {
+      id: document.id,
+      sourceType: "website",
+      title: document.title,
+      url: document.url ?? url,
+      status: document.status,
     },
-    job: { id: jobId, status: "queued" },
+    job: { id: job.id, status: "queued" },
   };
 
   return NextResponse.json(responseBody, { status: 202 });

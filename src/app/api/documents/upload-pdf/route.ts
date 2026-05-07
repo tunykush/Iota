@@ -1,13 +1,22 @@
 // POST /api/documents/upload-pdf
 // Accepts multipart/form-data with a PDF file (FR-010, FR-011, FR-012, FR-013)
-// Mock: validates content-type, creates a document + job record, simulates processing.
 
 import { NextRequest, NextResponse } from "next/server";
-import { mockDocuments, mockJobs, generateId, simulateDelay } from "@/lib/api/mock-db";
 import type { UploadPdfResponse } from "@/lib/api/types";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
-  await simulateDelay(600);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to upload documents" } },
+      { status: 401 },
+    );
+  }
 
   let formData: FormData;
   try {
@@ -47,56 +56,58 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const docId = generateId("doc");
-  const jobId = generateId("job");
-  const now = new Date().toISOString();
   const displayTitle = title ?? file.name;
 
-  // Push into mock store so GET /documents reflects the new upload
-  mockDocuments.unshift({
-    id: docId,
-    sourceType: "pdf",
-    title: displayTitle,
-    originalFilename: file.name,
-    status: "processing",
-    chunkCount: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .insert({
+      user_id: user.id,
+      source_type: "pdf",
+      title: displayTitle,
+      original_filename: file.name,
+      status: "processing",
+      chunk_count: 0,
+      metadata: { size: file.size, type: file.type },
+    })
+    .select("id, source_type, title, status, created_at")
+    .single();
 
-  mockJobs.push({
-    id: jobId,
-    documentId: docId,
-    status: "queued",
-    stage: "extracting",
-    createdAt: now,
-  });
+  if (documentError || !document) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: documentError?.message ?? "Failed to create document" } },
+      { status: 500 },
+    );
+  }
 
-  // Simulate async processing: after 4 s mark as ready
-  setTimeout(() => {
-    const doc = mockDocuments.find((d) => d.id === docId);
-    const job = mockJobs.find((j) => j.id === jobId);
-    if (doc) {
-      doc.status = "ready";
-      doc.chunkCount = Math.floor(Math.random() * 200) + 40;
-      doc.updatedAt = new Date().toISOString();
-    }
-    if (job) {
-      job.status = "succeeded";
-      job.stage = "storing";
-      job.completedAt = new Date().toISOString();
-    }
-  }, 4000);
+  const { data: job, error: jobError } = await supabase
+    .from("ingestion_jobs")
+    .insert({
+      user_id: user.id,
+      document_id: document.id,
+      job_type: "pdf",
+      status: "queued",
+      stage: "extracting",
+      metadata: { filename: file.name, size: file.size },
+    })
+    .select("id, status")
+    .single();
+
+  if (jobError || !job) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: jobError?.message ?? "Failed to create ingestion job" } },
+      { status: 500 },
+    );
+  }
 
   const body: UploadPdfResponse = {
     document: {
-      id: docId,
+      id: document.id,
       sourceType: "pdf",
-      title: displayTitle,
-      status: "processing",
-      createdAt: now,
+      title: document.title,
+      status: document.status,
+      createdAt: document.created_at,
     },
-    job: { id: jobId, status: "queued" },
+    job: { id: job.id, status: "queued" },
   };
 
   return NextResponse.json(body, { status: 202 });

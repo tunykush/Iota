@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useDashboard } from "@/hooks/useDashboard";
+import { createClient } from "@/lib/supabase/client";
 import type { Document, DocumentSourceType, DocumentStatus } from "@/lib/api/types";
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -60,6 +62,19 @@ function Skeleton({ className = "" }: { className?: string }) {
 // ─── Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { stats, recentDocuments, recentConversations, loading, error, refetch } = useDashboard();
+  const [displayName, setDisplayName] = useState("there");
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      const currentUser = data.user;
+      const firstName = currentUser?.user_metadata?.first_name as string | undefined;
+      const fullName = currentUser?.user_metadata?.full_name as string | undefined;
+      const emailName = currentUser?.email?.split("@")[0];
+
+      setDisplayName(firstName?.trim() || fullName?.trim() || emailName || "there");
+    });
+  }, []);
 
   const queryDelta = stats
     ? stats.queryCountToday - stats.queryCountYesterday
@@ -86,14 +101,16 @@ export default function DashboardPage() {
             <span className="text-muted text-[10px] font-mono">· N° 01</span>
           </div>
           <h1 className="text-2xl font-display font-medium tracking-tight">
-            Good morning, Ada<span className="text-accent">.</span>
+            Good morning, {displayName}<span className="text-accent">.</span>
           </h1>
           <p className="text-sm text-muted mt-1">
             {loading
               ? "Loading your knowledge base…"
               : stats
-                ? `Your knowledge base is ready — ${stats.documentCount} sources indexed.`
-                : "Your knowledge base is ready."}
+                ? stats.documentCount > 0
+                  ? `Your knowledge base is ready — ${stats.documentCount} sources indexed.`
+                  : "Your knowledge base is empty. Upload a source to begin."
+                : "Your knowledge base is empty."}
           </p>
         </div>
 
@@ -179,7 +196,7 @@ export default function DashboardPage() {
                     <Skeleton className="h-3 w-10 ml-auto" />
                   </div>
                 ))
-              : recentDocuments.map((doc: Document, i: number) => (
+              : recentDocuments.length > 0 ? recentDocuments.map((doc: Document, i: number) => (
                   <div
                     key={doc.id}
                     className={`grid grid-cols-[1fr_60px_80px_70px_80px] gap-3 px-4 py-3 items-center text-sm hover:bg-black/[0.02] transition-colors ${i < recentDocuments.length - 1 ? "border-b border-black/[0.06]" : ""}`}
@@ -199,7 +216,11 @@ export default function DashboardPage() {
                       {formatDate(doc.createdAt)}
                     </span>
                   </div>
-                ))}
+                )) : (
+                  <div className="px-4 py-8 text-center text-sm text-muted">
+                    No documents yet. Upload your first source to populate this table.
+                  </div>
+                )}
           </div>
 
           {/* Mobile cards */}
@@ -215,7 +236,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))
-              : recentDocuments.map((doc: Document) => (
+              : recentDocuments.length > 0 ? recentDocuments.map((doc: Document) => (
                   <div key={doc.id} className="border border-black/10 rounded-sm p-3 bg-white/20">
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <span className="min-w-0 break-words text-xs leading-relaxed font-medium">{doc.title}</span>
@@ -236,7 +257,11 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="border border-black/10 rounded-sm p-4 bg-white/20 text-sm text-muted">
+                    No documents yet.
+                  </div>
+                )}
           </div>
         </div>
 
@@ -267,7 +292,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))
-                : recentConversations.map((conv) => (
+                : recentConversations.length > 0 ? recentConversations.map((conv) => (
                     <Link
                       key={conv.id}
                       href="/dashboard/chat"
@@ -283,7 +308,11 @@ export default function DashboardPage() {
                         </span>
                       </div>
                     </Link>
-                  ))}
+                  )) : (
+                    <div className="border border-black/10 rounded-sm p-3.5 text-sm text-muted">
+                      No chats yet. Start a new grounded chat when you are ready.
+                    </div>
+                  )}
             </div>
           </div>
 
@@ -355,7 +384,7 @@ export default function DashboardPage() {
       <div className="mt-10 pt-5 border-t border-black/10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-[9px] font-mono text-muted tracking-widest uppercase">
         <span>iota · dashboard · vol. 01</span>
         <span>10.7626° N · 106.6602° E</span>
-        <span>v1.4.0</span>
+        <span>live data</span>
       </div>
     </div>
   );

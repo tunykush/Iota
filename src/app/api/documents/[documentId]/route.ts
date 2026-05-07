@@ -2,45 +2,109 @@
 // DELETE /api/documents/[documentId]  — delete document + all chunks (FR-041)
 
 import { NextRequest, NextResponse } from "next/server";
-import { mockDocuments, mockJobs, simulateDelay } from "@/lib/api/mock-db";
+import type { DocumentSourceType, DocumentStatus, JobStage, JobStatus } from "@/lib/api/types";
+import { createClient } from "@/lib/supabase/server";
 
 type Params = { params: Promise<{ documentId: string }> };
 
 export async function GET(_request: NextRequest, { params }: Params) {
-  await simulateDelay(200);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to view documents" } },
+      { status: 401 },
+    );
+  }
+
   const { documentId } = await params;
 
-  const doc = mockDocuments.find((d) => d.id === documentId);
-  if (!doc) {
+  const { data: doc, error: docError } = await supabase
+    .from("documents")
+    .select("id, source_type, title, original_filename, url, status, chunk_count, created_at, updated_at")
+    .eq("id", documentId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (docError || !doc) {
     return NextResponse.json(
       { error: { code: "NOT_FOUND", message: `Document '${documentId}' not found` } },
       { status: 404 },
     );
   }
 
-  const job = mockJobs.find((j) => j.documentId === documentId);
+  const { data: job } = await supabase
+    .from("ingestion_jobs")
+    .select("id, document_id, status, stage, error_message, created_at, completed_at")
+    .eq("document_id", documentId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  return NextResponse.json({ document: doc, job: job ?? null });
+  return NextResponse.json({
+    document: {
+      id: doc.id,
+      sourceType: doc.source_type as DocumentSourceType,
+      title: doc.title,
+      originalFilename: doc.original_filename ?? undefined,
+      url: doc.url ?? undefined,
+      status: doc.status as DocumentStatus,
+      chunkCount: doc.chunk_count ?? 0,
+      createdAt: doc.created_at,
+      updatedAt: doc.updated_at,
+    },
+    job: job
+      ? {
+          id: job.id,
+          documentId: job.document_id,
+          status: job.status as JobStatus,
+          stage: job.stage as JobStage | undefined,
+          errorMessage: job.error_message ?? undefined,
+          createdAt: job.created_at,
+          completedAt: job.completed_at ?? undefined,
+        }
+      : null,
+  });
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
-  await simulateDelay(300);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to delete documents" } },
+      { status: 401 },
+    );
+  }
+
   const { documentId } = await params;
 
-  const idx = mockDocuments.findIndex((d) => d.id === documentId);
-  if (idx === -1) {
+  const { error, count } = await supabase
+    .from("documents")
+    .delete({ count: "exact" })
+    .eq("id", documentId)
+    .eq("user_id", user.id);
+
+  if (error) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: error.message } },
+      { status: 500 },
+    );
+  }
+
+  if (!count) {
     return NextResponse.json(
       { error: { code: "NOT_FOUND", message: `Document '${documentId}' not found` } },
       { status: 404 },
     );
   }
-
-  // Remove document (chunks/jobs cascade in real DB via FK ON DELETE CASCADE)
-  mockDocuments.splice(idx, 1);
-
-  // Also remove associated jobs from mock store
-  const jobIdx = mockJobs.findIndex((j) => j.documentId === documentId);
-  if (jobIdx !== -1) mockJobs.splice(jobIdx, 1);
 
   return new NextResponse(null, { status: 204 });
 }
