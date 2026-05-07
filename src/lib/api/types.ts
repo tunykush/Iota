@@ -170,6 +170,18 @@ export type AdminUserSummary = {
   failedJobCount: number;
   conversationCount: number;
   recentMessageCount: number;
+  chunkCount: number;
+  sampledChunkCount: number;
+  sourceCitationCount: number;
+  lastActivityAt: string;
+};
+
+export type AdminBreakdowns = {
+  documentsByStatus: Record<string, number>;
+  documentsBySourceType: Record<string, number>;
+  jobsByStatus: Record<string, number>;
+  messagesByRole: Record<string, number>;
+  chunksBySourceType: Record<string, number>;
 };
 
 export type AdminOverviewResponse = {
@@ -182,9 +194,22 @@ export type AdminOverviewResponse = {
     failedJobCount: number;
     conversationCount: number;
     recentMessageCount: number;
+    chunkCount: number;
+    sampledChunkCount: number;
+    sourceCitationCount: number;
+    messagesLast24h: number;
+    documentsLast7d: number;
   };
+  breakdowns: AdminBreakdowns;
   users: AdminUserSummary[];
-  recentDocuments: Array<Pick<Document, "id" | "sourceType" | "title" | "status" | "chunkCount" | "createdAt"> & { userId: string }>;
+  recentDocuments: Array<Pick<Document, "id" | "sourceType" | "title" | "status" | "chunkCount" | "createdAt" | "updatedAt" | "originalFilename" | "url"> & {
+    userId: string;
+    storageBucket?: string;
+    storagePath?: string;
+    contentHash?: string;
+    metadata?: Record<string, unknown>;
+    errorMessage?: string;
+  }>;
   recentJobs: Array<{
     id: string;
     userId: string;
@@ -193,6 +218,8 @@ export type AdminOverviewResponse = {
     status: JobStatus;
     stage?: JobStage;
     errorMessage?: string;
+    metadata?: Record<string, unknown>;
+    startedAt?: string;
     createdAt: string;
     completedAt?: string;
   }>;
@@ -202,6 +229,38 @@ export type AdminOverviewResponse = {
     conversationId: string;
     role: "user" | "assistant" | "system";
     content: string;
+    model?: string;
+    metadata?: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  sampledChunks: Array<{
+    id: string;
+    userId: string;
+    documentId: string;
+    chunkIndex: number;
+    tokenCount?: number;
+    sourceType: DocumentSourceType;
+    pageNumber?: number;
+    url?: string;
+    metadata?: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  recentSources: Array<{
+    id: string;
+    userId: string;
+    messageId: string;
+    documentId?: string;
+    chunkId?: string;
+    score?: number;
+    snippet?: string;
+    metadata?: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  timeline: Array<{
+    type: "document" | "job" | "conversation" | "message";
+    userId: string;
+    title: string;
+    status: string;
     createdAt: string;
   }>;
 };
