@@ -627,3 +627,37 @@ __4. Kiểm Tra Table Editor__ Vào `Table Editor`, kiểm tra có đủ bảng 
 - `conversations`
 - `conversation_messages`
 - `message_sources`
+
+__Step 4A.6: Chia Role Admin/User__ Sau khi base schema và RLS chạy xong, chạy thêm file SQL:
+
+```text
+docs/technical/admin-roles.sql
+```
+
+Phần này tạo bảng `profiles`, role `user/admin`, trigger tự tạo profile khi user đăng ký, và policy để user thường chỉ thấy data của họ còn admin có thể đọc toàn bộ data phục vụ dashboard quản trị.
+
+__Tạo Hoặc Gán Tài Khoản Admin__ Nếu muốn tạo account admin mới, vào `Authentication > Users > Add user` trong Supabase:
+
+```text
+Email: iota+admin@iota.local
+Password: iota+admin
+User metadata: {"full_name":"Iota Admin","role":"admin"}
+```
+
+Nếu bạn muốn dùng email hiện tại của bạn làm admin thì không cần tạo account mới. Chỉ cần chạy SQL dưới đây và thay email bằng email bạn đang dùng để login.
+
+Gán role admin thủ công:
+
+```sql
+update public.profiles
+set role = 'admin', updated_at = now()
+where email = 'your-email@example.com';
+```
+
+__Env Cần Có Cho Admin API__ Trong `.env.local` cần thêm service role key để server admin API đọc được toàn bộ dữ liệu:
+
+```text
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+Không đưa key này lên client, không commit `.env.local`.

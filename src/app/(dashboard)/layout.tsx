@@ -11,6 +11,7 @@ import type { Conversation } from "@/lib/api/types";
 type DashboardUser = {
   email: string;
   name: string;
+  role: "admin" | "user";
 };
 
 const NAV_ITEMS = [
@@ -72,7 +73,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const supabase = createClient();
 
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       const currentUser = data.user;
 
       if (!currentUser?.email) {
@@ -81,9 +82,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
 
       const fullName = currentUser.user_metadata?.full_name as string | undefined;
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", currentUser.id).maybeSingle();
       setUser({
         email: currentUser.email,
-        name: fullName?.trim() || currentUser.email.split("@")[0],
+        name: profile?.full_name?.trim() || fullName?.trim() || currentUser.email.split("@")[0],
+        role: profile?.role === "admin" ? "admin" : "user",
       });
     });
   }, []);
@@ -210,6 +213,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex-none border-t border-black/10">
           {/* Settings link */}
           <div className="px-3 py-2 border-b border-black/10">
+            {user?.role === "admin" && (
+              <Link
+                href="/dashboard/admin"
+                onClick={() => setSidebarOpen(false)}
+                className={`
+                  flex items-center gap-2.5 px-2 py-2 rounded-sm text-sm transition-colors mb-1
+                  ${pathname === "/dashboard/admin"
+                    ? "bg-foreground text-background"
+                    : "text-foreground/70 hover:bg-black/5 hover:text-foreground"
+                  }
+                `}
+              >
+                <span className={pathname === "/dashboard/admin" ? "opacity-100" : "opacity-60"}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                </span>
+                <span className="flex-1">Admin</span>
+              </Link>
+            )}
             <Link
               href="/dashboard/settings"
               onClick={() => setSidebarOpen(false)}

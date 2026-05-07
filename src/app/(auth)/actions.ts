@@ -24,8 +24,10 @@ export async function signIn(formData: FormData) {
     return { error: error.message };
   }
 
+  const { data: profile } = await supabase.from("profiles").select("role").eq("email", email).maybeSingle();
+
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  redirect(profile?.role === "admin" ? "/dashboard/admin" : "/dashboard");
 }
 
 // ─── Sign Up ───────────────────────────────────────────────────

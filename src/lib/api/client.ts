@@ -17,6 +17,7 @@ import type {
   ConversationListResponse,
   ConversationDetailResponse,
   DashboardResponse,
+  AdminOverviewResponse,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
@@ -112,4 +113,9 @@ export const chatApi = {
 // ─── Dashboard ─────────────────────────────────────────────────
 export const dashboardApi = {
   get: () => apiFetch<DashboardResponse>("/dashboard"),
+};
+
+// ─── Admin ──────────────────────────────────────────────────────
+export const adminApi = {
+  overview: () => apiFetch<AdminOverviewResponse>("/admin/overview"),
 };

@@ -157,3 +157,51 @@ export type DashboardResponse = {
   recentDocuments: Document[];
   recentConversations: Conversation[];
 };
+
+// ─── Admin ─────────────────────────────────────────────────────
+export type AdminUserSummary = {
+  id: string;
+  email?: string;
+  name?: string;
+  role: "admin" | "user";
+  createdAt: string;
+  documentCount: number;
+  processingCount: number;
+  failedJobCount: number;
+  conversationCount: number;
+  recentMessageCount: number;
+};
+
+export type AdminOverviewResponse = {
+  stats: {
+    userCount: number;
+    adminCount: number;
+    documentCount: number;
+    processingCount: number;
+    jobCount: number;
+    failedJobCount: number;
+    conversationCount: number;
+    recentMessageCount: number;
+  };
+  users: AdminUserSummary[];
+  recentDocuments: Array<Pick<Document, "id" | "sourceType" | "title" | "status" | "chunkCount" | "createdAt"> & { userId: string }>;
+  recentJobs: Array<{
+    id: string;
+    userId: string;
+    documentId: string;
+    jobType: DocumentSourceType;
+    status: JobStatus;
+    stage?: JobStage;
+    errorMessage?: string;
+    createdAt: string;
+    completedAt?: string;
+  }>;
+  recentMessages: Array<{
+    id: string;
+    userId: string;
+    conversationId: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+    createdAt: string;
+  }>;
+};
