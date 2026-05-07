@@ -65,7 +65,7 @@ function Breakdowns({ breakdowns }: { breakdowns: AdminBreakdowns }) {
   );
 }
 
-export default function AdminPage() {
+export default function AdminTelemetryClient() {
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -216,3 +216,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
