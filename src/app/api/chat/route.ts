@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { message, conversationId, topK = 5, documentIds } = body;
+  const { message, conversationId, topK = 5, documentIds, mode } = body;
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return NextResponse.json(
@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
       message: message.trim(),
       topK,
       documentIds,
+      mode,
     });
   } catch (error) {
     console.error("/api/chat failed", error);
@@ -229,6 +230,8 @@ export async function POST(request: NextRequest) {
       role: "assistant",
       content: assistantMsg.content,
       createdAt: assistantMsg.createdAt,
+      provider: ragResponse.metadata.provider,
+      model: ragResponse.metadata.model,
     },
     sources: ragResponse.sources,
   };

@@ -5,7 +5,7 @@ export type LlmMessage = {
   content: string;
 };
 
-export type LlmProviderId = "zai" | "groq" | "gemini" | "extractive";
+export type LlmProviderId = "zai" | "deepseek" | "groq" | "gemini" | "openrouter" | "extractive";
 
 export type LlmGenerateRequest = {
   messages: LlmMessage[];

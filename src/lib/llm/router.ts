@@ -1,6 +1,8 @@
 import type { LlmGenerateRequest, LlmProvider, LlmRouterResult } from "./types";
+import { createDeepSeekProvider } from "./providers/deepseek";
 import { createGeminiProvider } from "./providers/gemini";
 import { createGroqProvider } from "./providers/groq";
+import { createOpenRouterProvider } from "./providers/openrouter";
 import { createZaiProvider } from "./providers/zai";
 
 function defaultProviders(): LlmProvider[] {
@@ -8,8 +10,16 @@ function defaultProviders(): LlmProvider[] {
     createZaiProvider("glm-4.7"),
     createZaiProvider("glm-4.6"),
     createZaiProvider("glm-4.5"),
-    createGroqProvider(),
+    createGroqProvider("llama-3.1-8b-instant"),
+    createOpenRouterProvider(),
+    createOpenRouterProvider("z-ai/glm-4.5-air:free"),
+    createOpenRouterProvider("qwen/qwen3-next-80b-a3b-instruct:free"),
+    createOpenRouterProvider("nvidia/nemotron-nano-9b-v2:free"),
     createGeminiProvider(),
+    createGeminiProvider("gemini-2.0-flash-lite"),
+    createGeminiProvider("gemini-2.0-flash"),
+    createGeminiProvider("gemini-2.5-flash-lite"),
+    createDeepSeekProvider(),
   ];
 }
 

@@ -2,11 +2,12 @@ import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../type
 
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1";
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
+const GROQ_MAX_TOKENS = Number(process.env.GROQ_MAX_TOKENS ?? 450);
 
-export function createGroqProvider(): LlmProvider {
+export function createGroqProvider(model = GROQ_MODEL): LlmProvider {
   return {
     id: "groq",
-    model: GROQ_MODEL,
+    model,
     isConfigured: () => Boolean(process.env.GROQ_API_KEY),
     async generate(request: LlmGenerateRequest): Promise<LlmGenerateResult> {
       const started = Date.now();
@@ -17,10 +18,10 @@ export function createGroqProvider(): LlmProvider {
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: GROQ_MODEL,
+          model,
           messages: request.messages,
           temperature: request.temperature ?? 0.2,
-          max_tokens: request.maxTokens ?? 900,
+          max_tokens: Math.min(request.maxTokens ?? GROQ_MAX_TOKENS, GROQ_MAX_TOKENS),
         }),
         signal: request.signal,
       });
@@ -36,7 +37,7 @@ export function createGroqProvider(): LlmProvider {
         throw new Error("Groq returned an empty response");
       }
 
-      return { content: content.trim(), provider: "groq", model: GROQ_MODEL, latencyMs: Date.now() - started };
+      return { content: content.trim(), provider: "groq", model, latencyMs: Date.now() - started };
     },
   };
 }

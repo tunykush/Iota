@@ -79,11 +79,19 @@ function MessageContent({ content }: { content: string }) {
 
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";
+  const isLocalAnswer = msg.provider === "extractive";
+  const answerBadge = isUser || !msg.provider ? null : isLocalAnswer ? "LOCAL FALLBACK" : `LLM · ${msg.provider}`;
 
   return (
     <div className={`msg ${isUser ? "msg-user" : "msg-bot"}`}>
       <div className="avatar" aria-hidden="true">{isUser ? "U" : "ι"}</div>
       <div className="bubble">
+        {answerBadge && (
+          <div className="mb-2 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider text-muted">
+            <span className="dash-badge">{answerBadge}</span>
+            {msg.model && <span className="opacity-60">{msg.model}</span>}
+          </div>
+        )}
         <MessageContent content={msg.content} />
         {msg.citations && msg.citations.length > 0 && (
           <div className="sources" aria-label="Referenced sources">

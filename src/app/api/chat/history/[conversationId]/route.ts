@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   const { data: messages, error: messagesError } = await supabase
     .from("conversation_messages")
-    .select("id, role, content, created_at")
+    .select("id, role, content, model, metadata, created_at")
     .eq("conversation_id", conversationId)
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
@@ -97,13 +97,20 @@ export async function GET(_request: NextRequest, { params }: Params) {
       updatedAt: conv.updated_at,
       messageCount: messages?.length ?? 0,
     },
-    messages: (messages ?? []).map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.created_at,
-      sources: sourcesByMessageId.get(message.id),
-    })),
+    messages: (messages ?? []).map((message) => {
+      const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
+      const provider = typeof metadata.provider === "string" ? metadata.provider : undefined;
+
+      return {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.created_at,
+        sources: sourcesByMessageId.get(message.id),
+        provider,
+        model: message.model ?? undefined,
+      };
+    }),
   };
 
   return NextResponse.json(body);

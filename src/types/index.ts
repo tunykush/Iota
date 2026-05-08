@@ -36,6 +36,8 @@ export type Message = {
   role: ChatRole;
   content: string;
   citations?: Citation[];
+  provider?: string;
+  model?: string;
   timestamp: number;
   isStreaming?: boolean;
 };

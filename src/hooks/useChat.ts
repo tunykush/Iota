@@ -19,6 +19,8 @@ export type LocalMessage = {
   content: string;
   createdAt: string;
   sources?: ChatSource[];
+  provider?: string;
+  model?: string;
   isStreaming?: boolean;
 };
 
@@ -63,6 +65,8 @@ export function useChat(initialConversationId?: string | null) {
             content: m.content,
             createdAt: m.createdAt,
             sources: m.sources,
+            provider: m.provider,
+            model: m.model,
           })),
         );
       })
@@ -125,6 +129,8 @@ export function useChat(initialConversationId?: string | null) {
               content: response.message.content,
               createdAt: response.message.createdAt,
               sources: response.sources,
+              provider: response.message.provider,
+              model: response.message.model,
             }),
         );
 

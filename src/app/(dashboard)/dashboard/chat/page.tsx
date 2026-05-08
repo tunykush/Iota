@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
 import { useChat } from "@/hooks/useChat";
 import type { Message, Citation, ChatState } from "@/types";
 import type { LocalMessage } from "@/hooks/useChat";
+import type { ChatGenerationMode } from "@/lib/api/types";
 
 // ─── Map API LocalMessage → legacy Message type used by MessageList ───
 function toMessage(m: LocalMessage): Message {
@@ -23,6 +24,8 @@ function toMessage(m: LocalMessage): Message {
     role: m.role === "assistant" ? "assistant" : "user",
     content: m.content,
     citations: citations.length > 0 ? citations : undefined,
+    provider: m.provider,
+    model: m.model,
     timestamp: new Date(m.createdAt).getTime(),
     isStreaming: m.isStreaming,
   };
@@ -33,6 +36,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const selectedConversationId = searchParams.get("conversationId");
   const { messages: rawMessages, loadingHistory, sending, error, sendMessage, reset } = useChat(selectedConversationId);
+  const [generationMode, setGenerationMode] = useState<ChatGenerationMode>("auto");
 
   // Map to legacy Message type
   const messages = useMemo(() => rawMessages.map(toMessage), [rawMessages]);
@@ -65,7 +69,7 @@ export default function ChatPage() {
   }, [messages]);
 
   const handleSend = (text: string) => {
-    sendMessage(text)
+    sendMessage(text, { mode: generationMode })
       .then((response) => {
         if (!selectedConversationId && response?.conversationId) {
           router.replace(`/dashboard/chat?conversationId=${response.conversationId}`);
@@ -99,6 +103,20 @@ export default function ChatPage() {
             Ask your knowledge base<span className="text-accent">.</span>
           </h1>
           <div className="flex gap-2">
+            <div className="dash-badge flex items-center gap-1">
+              <span>MODE</span>
+              <select
+                value={generationMode}
+                onChange={(event) => setGenerationMode(event.target.value as ChatGenerationMode)}
+                disabled={sending || loadingHistory}
+                className="bg-transparent font-mono text-[10px] uppercase outline-none disabled:opacity-60"
+                aria-label="Chat generation mode"
+              >
+                <option value="auto">AUTO</option>
+                <option value="llm">LLM</option>
+                <option value="local">LOCAL</option>
+              </select>
+            </div>
             <span className="dash-badge">TOP 5</span>
             <span className="dash-badge">{sourceCount} SRC</span>
             <span className="dash-badge">{docCount} DOC</span>

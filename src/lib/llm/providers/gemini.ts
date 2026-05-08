@@ -1,7 +1,8 @@
 import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../types";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite";
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS ?? 450);
 
 function toGeminiContents(messages: LlmGenerateRequest["messages"]) {
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
@@ -13,14 +14,15 @@ function toGeminiContents(messages: LlmGenerateRequest["messages"]) {
     }));
 }
 
-export function createGeminiProvider(): LlmProvider {
+export function createGeminiProvider(model = GEMINI_MODEL): LlmProvider {
   return {
     id: "gemini",
-    model: GEMINI_MODEL,
-    isConfigured: () => Boolean(process.env.GEMINI_API_KEY),
+    model,
+    isConfigured: () => Boolean(process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY),
     async generate(request: LlmGenerateRequest): Promise<LlmGenerateResult> {
       const started = Date.now();
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      const url = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -28,7 +30,7 @@ export function createGeminiProvider(): LlmProvider {
           contents: toGeminiContents(request.messages),
           generationConfig: {
             temperature: request.temperature ?? 0.2,
-            maxOutputTokens: request.maxTokens ?? 900,
+            maxOutputTokens: Math.min(request.maxTokens ?? GEMINI_MAX_TOKENS, GEMINI_MAX_TOKENS),
           },
         }),
         signal: request.signal,
@@ -45,7 +47,7 @@ export function createGeminiProvider(): LlmProvider {
         throw new Error("Gemini returned an empty response");
       }
 
-      return { content: content.trim(), provider: "gemini", model: GEMINI_MODEL, latencyMs: Date.now() - started };
+      return { content: content.trim(), provider: "gemini", model, latencyMs: Date.now() - started };
     },
   };
 }

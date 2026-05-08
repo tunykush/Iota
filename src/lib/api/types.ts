@@ -101,7 +101,11 @@ export type ChatMessageResponse = {
   role: "assistant";
   content: string;
   createdAt: string;
+  provider?: string;
+  model?: string;
 };
+
+export type ChatGenerationMode = "auto" | "llm" | "local";
 
 export type ChatRequest = {
   message: string;
@@ -109,6 +113,7 @@ export type ChatRequest = {
   documentIds?: string[];
   topK?: number;
   language?: string;
+  mode?: ChatGenerationMode;
 };
 
 export type ChatResponse = {
@@ -135,6 +140,8 @@ export type ConversationMessage = {
   content: string;
   createdAt: string;
   sources?: ChatSource[];
+  provider?: string;
+  model?: string;
 };
 
 export type ConversationDetailResponse = {
