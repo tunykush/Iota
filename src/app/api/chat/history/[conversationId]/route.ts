@@ -49,6 +49,46 @@ export async function GET(_request: NextRequest, { params }: Params) {
     );
   }
 
+  const assistantMessageIds = (messages ?? [])
+    .filter((message) => message.role === "assistant")
+    .map((message) => message.id);
+
+  const { data: sources, error: sourcesError } = assistantMessageIds.length
+    ? await supabase
+        .from("message_sources")
+        .select("message_id, document_id, chunk_id, score, snippet, metadata")
+        .eq("user_id", user.id)
+        .in("message_id", assistantMessageIds)
+    : { data: [], error: null };
+
+  if (sourcesError) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: sourcesError.message } },
+      { status: 500 },
+    );
+  }
+
+  const sourcesByMessageId = new Map<string, NonNullable<ConversationDetailResponse["messages"][number]["sources"]>>();
+  for (const source of sources ?? []) {
+    const metadata = source.metadata && typeof source.metadata === "object" ? source.metadata as Record<string, unknown> : {};
+    const title = typeof metadata.title === "string" ? metadata.title : "Untitled source";
+    const sourceType = metadata.sourceType === "website" || metadata.sourceType === "database" || metadata.sourceType === "pdf" ? metadata.sourceType : "pdf";
+    const pageNumber = typeof metadata.pageNumber === "number" ? metadata.pageNumber : undefined;
+    const url = typeof metadata.url === "string" ? metadata.url : undefined;
+    const messageSources = sourcesByMessageId.get(source.message_id) ?? [];
+    messageSources.push({
+      documentId: source.document_id ?? "",
+      chunkId: source.chunk_id ?? "",
+      title,
+      sourceType,
+      pageNumber,
+      url,
+      score: source.score ?? 0,
+      snippet: source.snippet ?? "",
+    });
+    sourcesByMessageId.set(source.message_id, messageSources);
+  }
+
   const body: ConversationDetailResponse = {
     conversation: {
       id: conv.id,
@@ -62,6 +102,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
       role: message.role,
       content: message.content,
       createdAt: message.created_at,
+      sources: sourcesByMessageId.get(message.id),
     })),
   };
 

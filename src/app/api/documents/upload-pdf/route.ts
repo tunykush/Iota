@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { UploadPdfResponse } from "@/lib/api/types";
+import { ingestDocumentText, markIngestionFailed } from "@/lib/rag/ingestion";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
@@ -97,6 +98,34 @@ export async function POST(request: NextRequest) {
       { error: { code: "DATABASE_ERROR", message: jobError?.message ?? "Failed to create ingestion job" } },
       { status: 500 },
     );
+  }
+
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const latinText = new TextDecoder("latin1").decode(bytes);
+    const extractedText = latinText
+      .replace(/\r/g, "\n")
+      .replace(/[^\x09\x0a\x0d\x20-\x7e\u00c0-\u1ef9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    await ingestDocumentText({
+      supabase,
+      userId: user.id,
+      documentId: document.id,
+      jobId: job.id,
+      sourceType: "pdf",
+      text: extractedText,
+      metadata: { filename: file.name, size: file.size, extractionMode: "basic-latin1" },
+    });
+  } catch (error) {
+    await markIngestionFailed({
+      supabase,
+      userId: user.id,
+      documentId: document.id,
+      jobId: job.id,
+      message: error instanceof Error ? error.message : "Failed to ingest PDF",
+    });
   }
 
   const body: UploadPdfResponse = {

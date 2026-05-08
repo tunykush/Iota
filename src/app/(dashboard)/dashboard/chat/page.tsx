@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
 import { useChat } from "@/hooks/useChat";
 import type { Message, Citation, ChatState } from "@/types";
@@ -28,7 +29,9 @@ function toMessage(m: LocalMessage): Message {
 }
 
 export default function ChatPage() {
-  const { messages: rawMessages, sending, error, sendMessage, reset } = useChat();
+  const searchParams = useSearchParams();
+  const selectedConversationId = searchParams.get("conversationId");
+  const { messages: rawMessages, sending, error, sendMessage, reset } = useChat(selectedConversationId);
 
   // Map to legacy Message type
   const messages = useMemo(() => rawMessages.map(toMessage), [rawMessages]);
@@ -109,6 +112,7 @@ export default function ChatPage() {
           <MessageList
             messages={messages}
             chatState={chatState}
+            error={error}
             onRetry={handleRetry}
           />
           <ChatComposer onSend={handleSend} chatState={chatState} />

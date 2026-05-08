@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { CrawlUrlRequest, CrawlUrlResponse } from "@/lib/api/types";
+import { ingestDocumentText, markIngestionFailed, stripHtml } from "@/lib/rag/ingestion";
 import { createClient } from "@/lib/supabase/server";
 
 function isValidHttpUrl(raw: string): boolean {
@@ -104,6 +105,38 @@ export async function POST(request: NextRequest) {
       { error: { code: "DATABASE_ERROR", message: jobError?.message ?? "Failed to create ingestion job" } },
       { status: 500 },
     );
+  }
+
+  try {
+    const pageResponse = await fetch(url, {
+      headers: { "user-agent": "IotaBot/0.1 (+https://iota.local)" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!pageResponse.ok) {
+      throw new Error(`Website returned ${pageResponse.status}`);
+    }
+
+    const html = await pageResponse.text();
+    const text = stripHtml(html);
+    await ingestDocumentText({
+      supabase,
+      userId: user.id,
+      documentId: document.id,
+      jobId: job.id,
+      sourceType: "website",
+      text,
+      url,
+      metadata: { crawlDepth, extractedFrom: url },
+    });
+  } catch (error) {
+    await markIngestionFailed({
+      supabase,
+      userId: user.id,
+      documentId: document.id,
+      jobId: job.id,
+      message: error instanceof Error ? error.message : "Failed to ingest website",
+    });
   }
 
   const responseBody: CrawlUrlResponse = {

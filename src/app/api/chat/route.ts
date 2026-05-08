@@ -1,20 +1,47 @@
-// POST /api/chat  — RAG chat endpoint (FR-050 to FR-056)
-// Mock: simulates retrieval + LLM response with realistic latency.
-// Replace body with real FastAPI proxy call when backend is ready.
+// POST /api/chat - hybrid RAG endpoint.
+// Uses Supabase document chunks for retrieval and the LLM router for generation.
 
 import { NextRequest, NextResponse } from "next/server";
-import {
-  mockConversations,
-  mockMessages,
-  getNextRagResponse,
-  generateId,
-  simulateDelay,
-} from "@/lib/api/mock-db";
 import type { ChatRequest, ChatResponse, ConversationMessage } from "@/lib/api/types";
+import { runHybridRagChat } from "@/lib/rag/chat";
+import { createClient } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+
+function autoTitle(message: string): string {
+  return message.length > 60 ? `${message.slice(0, 57)}...` : message;
+}
+
+function classifyChatError(error: unknown) {
+  const message = error instanceof Error ? error.message : "No LLM provider could answer this request";
+
+  if (message.includes("No indexed document chunks") || message.includes("Failed to retrieve document chunks")) {
+    return {
+      status: 422,
+      code: "RETRIEVAL_ERROR",
+      message,
+    };
+  }
+
+  return {
+    status: 502,
+    code: "LLM_PROVIDER_ERROR",
+    message,
+  };
+}
 
 export async function POST(request: NextRequest) {
-  // Simulate RAG retrieval + LLM latency (1.2–2.0 s)
-  await simulateDelay(1200 + Math.random() * 800);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to chat with your documents" } },
+      { status: 401 },
+    );
+  }
 
   let body: ChatRequest;
   try {
@@ -26,7 +53,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { message, conversationId, topK = 5 } = body;
+  const { message, conversationId, topK = 5, documentIds } = body;
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return NextResponse.json(
@@ -35,63 +62,172 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Resolve or create conversation
   let convId = conversationId ?? null;
   if (!convId) {
-    convId = generateId("conv");
-    const now = new Date().toISOString();
-    // Auto-title from first message (truncated)
-    const autoTitle = message.length > 60 ? `${message.slice(0, 57)}…` : message;
-    mockConversations.unshift({
-      id: convId,
-      title: autoTitle,
-      createdAt: now,
-      updatedAt: now,
-      messageCount: 0,
-    });
-    mockMessages[convId] = [];
+    const { data: createdConversation, error: createConversationError } = await supabase
+      .from("conversations")
+      .insert({
+        user_id: user.id,
+        title: autoTitle(message.trim()),
+      })
+      .select("id")
+      .single();
+
+    if (createConversationError || !createdConversation) {
+      return NextResponse.json(
+        { error: { code: "DATABASE_ERROR", message: createConversationError?.message ?? "Failed to create conversation" } },
+        { status: 500 },
+      );
+    }
+
+    convId = createdConversation.id;
+  } else {
+    const { data: existingConversation, error: existingConversationError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (existingConversationError || !existingConversation) {
+      return NextResponse.json(
+        { error: { code: "NOT_FOUND", message: `Conversation '${convId}' not found` } },
+        { status: 404 },
+      );
+    }
   }
 
-  const now = new Date().toISOString();
-  const userMsgId = generateId("msg");
-  const assistantMsgId = generateId("msg");
+  const finalConversationId = convId;
+  if (!finalConversationId) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: "Failed to resolve conversation" } },
+      { status: 500 },
+    );
+  }
 
-  // Store user message
+  const { data: insertedUserMessage, error: userMessageError } = await supabase
+    .from("conversation_messages")
+    .insert({
+      user_id: user.id,
+      conversation_id: finalConversationId,
+      role: "user",
+      content: message.trim(),
+    })
+    .select("id, role, content, created_at")
+    .single();
+
+  if (userMessageError || !insertedUserMessage) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: userMessageError?.message ?? "Failed to save user message" } },
+      { status: 500 },
+    );
+  }
+
+  await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", finalConversationId)
+    .eq("user_id", user.id);
+
   const userMsg: ConversationMessage = {
-    id: userMsgId,
-    role: "user",
-    content: message.trim(),
-    createdAt: now,
+    id: insertedUserMessage.id,
+    role: insertedUserMessage.role,
+    content: insertedUserMessage.content,
+    createdAt: insertedUserMessage.created_at,
   };
 
-  // Get mock RAG response
-  const ragResponse = getNextRagResponse();
+  let ragResponse;
+  try {
+    ragResponse = await runHybridRagChat({
+      supabase,
+      userId: user.id,
+      message: message.trim(),
+      topK,
+      documentIds,
+    });
+  } catch (error) {
+    console.error("/api/chat failed", error);
+    const chatError = classifyChatError(error);
 
-  // Store assistant message
+    return NextResponse.json(
+      {
+        error: {
+          code: chatError.code,
+          message: chatError.message,
+        },
+      },
+      { status: chatError.status },
+    );
+  }
+
+  const { data: insertedAssistantMessage, error: assistantMessageError } = await supabase
+    .from("conversation_messages")
+    .insert({
+      user_id: user.id,
+      conversation_id: finalConversationId,
+      role: "assistant",
+      content: ragResponse.content,
+      model: ragResponse.metadata.model,
+      metadata: {
+        provider: ragResponse.metadata.provider,
+        attempts: ragResponse.metadata.attempts,
+      },
+    })
+    .select("id, role, content, created_at")
+    .single();
+
+  if (assistantMessageError || !insertedAssistantMessage) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: assistantMessageError?.message ?? "Failed to save assistant message" } },
+      { status: 500 },
+    );
+  }
+
+  if (ragResponse.sources.length > 0) {
+    const { error: sourcesError } = await supabase.from("message_sources").insert(
+      ragResponse.sources.map((source) => ({
+        user_id: user.id,
+        message_id: insertedAssistantMessage.id,
+        document_id: source.documentId,
+        chunk_id: source.chunkId,
+        score: source.score,
+        snippet: source.snippet,
+        metadata: {
+          title: source.title,
+          sourceType: source.sourceType,
+          pageNumber: source.pageNumber ?? null,
+          url: source.url ?? null,
+        },
+      })),
+    );
+
+    if (sourcesError) {
+      console.error("Failed to save message sources", sourcesError);
+    }
+  }
+
+  await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", finalConversationId)
+    .eq("user_id", user.id);
+
   const assistantMsg: ConversationMessage = {
-    id: assistantMsgId,
+    id: insertedAssistantMessage.id,
     role: "assistant",
-    content: ragResponse.content,
-    createdAt: new Date().toISOString(),
+    content: insertedAssistantMessage.content,
+    createdAt: insertedAssistantMessage.created_at,
     sources: ragResponse.sources,
   };
 
-  if (!mockMessages[convId]) mockMessages[convId] = [];
-  mockMessages[convId].push(userMsg, assistantMsg);
-
-  // Update conversation metadata
-  const conv = mockConversations.find((c) => c.id === convId);
-  if (conv) {
-    conv.updatedAt = new Date().toISOString();
-    conv.messageCount = (conv.messageCount ?? 0) + 2;
-  }
+  void userMsg;
 
   const responseBody: ChatResponse = {
-    conversationId: convId,
+    conversationId: finalConversationId,
     message: {
-      id: assistantMsgId,
+      id: assistantMsg.id,
       role: "assistant",
-      content: ragResponse.content,
+      content: assistantMsg.content,
       createdAt: assistantMsg.createdAt,
     },
     sources: ragResponse.sources,

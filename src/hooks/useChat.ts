@@ -31,6 +31,14 @@ export function useChat(initialConversationId?: string | null) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setConversationId(initialConversationId ?? null);
+    setError(null);
+    if (!initialConversationId) {
+      setMessages([]);
+    }
+  }, [initialConversationId]);
+
   // Load existing conversation messages on mount / id change
   useEffect(() => {
     if (!conversationId) return;

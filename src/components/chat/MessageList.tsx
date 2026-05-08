@@ -176,7 +176,7 @@ function RefusalState() {
   );
 }
 
-function ErrorState({ onRetry }: { onRetry?: () => void }) {
+function ErrorState({ error, onRetry }: { error?: string | null; onRetry?: () => void }) {
   return (
     <div className="msg msg-bot" role="alert">
       <div className="avatar" style={{ background: "var(--accent-hover)" }} aria-hidden="true">!</div>
@@ -185,7 +185,7 @@ function ErrorState({ onRetry }: { onRetry?: () => void }) {
           <div>
             <p className="text-sm font-medium mb-1">Đã xảy ra lỗi</p>
             <p className="text-[12.5px] text-muted leading-relaxed mb-2">
-              Không thể kết nối đến hệ thống retrieval. Vui lòng thử lại.
+              {error ?? "Không thể kết nối đến hệ thống retrieval. Vui lòng thử lại."}
             </p>
             {onRetry && (
               <button type="button" onClick={onRetry} className="dash-btn text-[11px]">
@@ -202,10 +202,11 @@ function ErrorState({ onRetry }: { onRetry?: () => void }) {
 type Props = {
   messages: Message[];
   chatState: ChatState;
+  error?: string | null;
   onRetry?: () => void;
 };
 
-export default function MessageList({ messages, chatState, onRetry }: Props) {
+export default function MessageList({ messages, chatState, error, onRetry }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -227,7 +228,7 @@ export default function MessageList({ messages, chatState, onRetry }: Props) {
       ))}
       {chatState === "loading" && <TypingIndicator />}
       {chatState === "refusal" && <RefusalState />}
-      {chatState === "error" && <ErrorState onRetry={onRetry} />}
+      {chatState === "error" && <ErrorState error={error} onRetry={onRetry} />}
       <div ref={bottomRef} />
     </div>
   );

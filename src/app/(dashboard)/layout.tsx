@@ -196,7 +196,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             recentChats.map((chat) => (
               <Link
                 key={chat.id}
-                href="/dashboard/chat"
+                href={`/dashboard/chat?conversationId=${chat.id}`}
                 onClick={() => setSidebarOpen(false)}
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
               >

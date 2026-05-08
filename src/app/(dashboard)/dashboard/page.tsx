@@ -295,7 +295,7 @@ export default function DashboardPage() {
                 : recentConversations.length > 0 ? recentConversations.map((conv) => (
                     <Link
                       key={conv.id}
-                      href="/dashboard/chat"
+                      href={`/dashboard/chat?conversationId=${conv.id}`}
                       className="block border border-black/10 rounded-sm p-3.5 hover:border-accent/30 hover:bg-black/[0.01] transition-colors group"
                     >
                       <p className="text-xs leading-relaxed text-foreground/80 group-hover:text-foreground transition-colors line-clamp-2 mb-2">
