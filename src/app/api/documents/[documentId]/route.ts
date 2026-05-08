@@ -86,23 +86,75 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
 
   const { documentId } = await params;
 
-  const { error, count } = await supabase
+  const { data: doc, error: docError } = await supabase
     .from("documents")
-    .delete({ count: "exact" })
+    .select("id")
     .eq("id", documentId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (docError || !doc) {
+    return NextResponse.json(
+      { error: { code: "NOT_FOUND", message: `Document '${documentId}' not found` } },
+      { status: 404 },
+    );
+  }
+
+  const { data: chunks, error: chunksLookupError } = await supabase
+    .from("document_chunks")
+    .select("id")
+    .eq("document_id", documentId)
     .eq("user_id", user.id);
 
-  if (error) {
+  if (chunksLookupError) {
     return NextResponse.json(
-      { error: { code: "DATABASE_ERROR", message: error.message } },
+      { error: { code: "DATABASE_ERROR", message: chunksLookupError.message } },
       { status: 500 },
     );
   }
 
-  if (!count) {
+  const chunkIds = (chunks ?? []).map((chunk) => chunk.id);
+  if (chunkIds.length > 0) {
+    const { error: chunkSourceError } = await supabase
+      .from("message_sources")
+      .delete()
+      .eq("user_id", user.id)
+      .in("chunk_id", chunkIds);
+
+    if (chunkSourceError) {
+      return NextResponse.json(
+        { error: { code: "DATABASE_ERROR", message: chunkSourceError.message } },
+        { status: 500 },
+      );
+    }
+  }
+
+  const cleanupSteps = [
+    supabase.from("message_sources").delete().eq("document_id", documentId).eq("user_id", user.id),
+    supabase.from("document_chunks").delete().eq("document_id", documentId).eq("user_id", user.id),
+    supabase.from("ingestion_jobs").delete().eq("document_id", documentId).eq("user_id", user.id),
+  ];
+
+  for (const step of cleanupSteps) {
+    const { error } = await step;
+    if (error) {
+      return NextResponse.json(
+        { error: { code: "DATABASE_ERROR", message: error.message } },
+        { status: 500 },
+      );
+    }
+  }
+
+  const { error: deleteDocumentError } = await supabase
+    .from("documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("user_id", user.id);
+
+  if (deleteDocumentError) {
     return NextResponse.json(
-      { error: { code: "NOT_FOUND", message: `Document '${documentId}' not found` } },
-      { status: 404 },
+      { error: { code: "DATABASE_ERROR", message: deleteDocumentError.message } },
+      { status: 500 },
     );
   }
 

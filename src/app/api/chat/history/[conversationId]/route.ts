@@ -115,3 +115,90 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   return NextResponse.json(body);
 }
+
+export async function DELETE(_request: NextRequest, { params }: Params) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: { code: "UNAUTHORIZED", message: "You must be signed in to delete chat history" } },
+      { status: 401 },
+    );
+  }
+
+  const { conversationId } = await params;
+
+  const { data: conv, error: convError } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (convError || !conv) {
+    return NextResponse.json(
+      { error: { code: "NOT_FOUND", message: `Conversation '${conversationId}' not found` } },
+      { status: 404 },
+    );
+  }
+
+  const { data: messages, error: messagesError } = await supabase
+    .from("conversation_messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", user.id);
+
+  if (messagesError) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: messagesError.message } },
+      { status: 500 },
+    );
+  }
+
+  const messageIds = (messages ?? []).map((message) => message.id);
+  if (messageIds.length > 0) {
+    const { error: sourcesError } = await supabase
+      .from("message_sources")
+      .delete()
+      .eq("user_id", user.id)
+      .in("message_id", messageIds);
+
+    if (sourcesError) {
+      return NextResponse.json(
+        { error: { code: "DATABASE_ERROR", message: sourcesError.message } },
+        { status: 500 },
+      );
+    }
+  }
+
+  const { error: deleteMessagesError } = await supabase
+    .from("conversation_messages")
+    .delete()
+    .eq("conversation_id", conversationId)
+    .eq("user_id", user.id);
+
+  if (deleteMessagesError) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: deleteMessagesError.message } },
+      { status: 500 },
+    );
+  }
+
+  const { error: deleteConversationError } = await supabase
+    .from("conversations")
+    .delete()
+    .eq("id", conversationId)
+    .eq("user_id", user.id);
+
+  if (deleteConversationError) {
+    return NextResponse.json(
+      { error: { code: "DATABASE_ERROR", message: deleteConversationError.message } },
+      { status: 500 },
+    );
+  }
+
+  return new NextResponse(null, { status: 204 });
+}

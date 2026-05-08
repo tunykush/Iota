@@ -108,6 +108,9 @@ export const chatApi = {
 
   getConversation: (conversationId: string) =>
     apiFetch<ConversationDetailResponse>(`/chat/history/${conversationId}`),
+
+  deleteConversation: (conversationId: string) =>
+    apiFetch<void>(`/chat/history/${conversationId}`, { method: "DELETE" }),
 };
 
 // ─── Dashboard ─────────────────────────────────────────────────

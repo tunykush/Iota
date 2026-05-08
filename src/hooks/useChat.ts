@@ -32,6 +32,7 @@ export function useChat(initialConversationId?: string | null) {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -157,17 +158,59 @@ export function useChat(initialConversationId?: string | null) {
     setMessages([]);
     setError(null);
     setSending(false);
+    setDeleting(false);
   }, []);
+
+  const deleteConversation = useCallback(async () => {
+    if (!conversationId || deleting) return false;
+
+    setDeleting(true);
+    setError(null);
+    try {
+      await chatApi.deleteConversation(conversationId);
+      setConversationId(null);
+      setMessages([]);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete conversation");
+      throw err;
+    } finally {
+      setDeleting(false);
+    }
+  }, [conversationId, deleting]);
 
   return {
     conversationId,
     messages,
     loadingHistory,
     sending,
+    deleting,
     error,
     sendMessage,
+    deleteConversation,
     reset,
   };
+}
+
+export function useDeleteConversation() {
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    setDeleting(conversationId);
+    setError(null);
+    try {
+      await chatApi.deleteConversation(conversationId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete conversation";
+      setError(msg);
+      throw err;
+    } finally {
+      setDeleting(null);
+    }
+  }, []);
+
+  return { deleteConversation, deleting, error };
 }
 
 // ─── useConversations — list ───────────────────────────────────
