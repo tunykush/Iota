@@ -304,7 +304,7 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-muted font-mono">{timeAgo(conv.updatedAt)}</span>
                         <span className="text-[10px] text-muted font-mono">
-                          {conv.messageCount ? `${Math.floor(conv.messageCount / 2)} turns` : ""}
+                          {conv.messageCount ? `${conv.messageCount} messages · ${Math.ceil(conv.messageCount / 2)} turns` : ""}
                         </span>
                       </div>
                     </Link>

@@ -201,7 +201,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
               >
                 <span className="font-serif italic text-accent text-sm leading-none">.</span>
-                <span className="truncate">{chat.title ?? "Untitled conversation"}</span>
+                <span className="min-w-0 flex-1 truncate">{chat.title ?? "Untitled conversation"}</span>
+                {typeof chat.messageCount === "number" && chat.messageCount > 0 && (
+                  <span className="flex-shrink-0 text-[9px] font-mono text-muted">
+                    {Math.ceil(chat.messageCount / 2)}t
+                  </span>
+                )}
               </Link>
             ))
           ) : (

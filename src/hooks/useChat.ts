@@ -28,6 +28,7 @@ export function useChat(initialConversationId?: string | null) {
     initialConversationId ?? null,
   );
   const [messages, setMessages] = useState<LocalMessage[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,10 +42,20 @@ export function useChat(initialConversationId?: string | null) {
 
   // Load existing conversation messages on mount / id change
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId) {
+      setLoadingHistory(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingHistory(true);
+    setError(null);
+    setMessages([]);
+
     chatApi
       .getConversation(conversationId)
       .then(({ messages: msgs }) => {
+        if (cancelled) return;
         setMessages(
           msgs.map((m) => ({
             id: m.id,
@@ -55,10 +66,18 @@ export function useChat(initialConversationId?: string | null) {
           })),
         );
       })
-      .catch(() => {
-        // Conversation not found or network error — start fresh
+      .catch((err) => {
+        if (cancelled) return;
         setMessages([]);
+        setError(err instanceof Error ? err.message : "Failed to load conversation");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHistory(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [conversationId]);
 
   const sendMessage = useCallback(
@@ -137,6 +156,7 @@ export function useChat(initialConversationId?: string | null) {
   return {
     conversationId,
     messages,
+    loadingHistory,
     sending,
     error,
     sendMessage,

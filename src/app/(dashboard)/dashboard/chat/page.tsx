@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
 import { useChat } from "@/hooks/useChat";
 import type { Message, Citation, ChatState } from "@/types";
@@ -29,9 +29,10 @@ function toMessage(m: LocalMessage): Message {
 }
 
 export default function ChatPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const selectedConversationId = searchParams.get("conversationId");
-  const { messages: rawMessages, sending, error, sendMessage, reset } = useChat(selectedConversationId);
+  const { messages: rawMessages, loadingHistory, sending, error, sendMessage, reset } = useChat(selectedConversationId);
 
   // Map to legacy Message type
   const messages = useMemo(() => rawMessages.map(toMessage), [rawMessages]);
@@ -39,6 +40,8 @@ export default function ChatPage() {
   // Derive ChatState from hook state
   const chatState: ChatState = sending
     ? "loading"
+    : loadingHistory
+      ? "loading"
     : error
       ? "error"
       : "idle";
@@ -62,9 +65,15 @@ export default function ChatPage() {
   }, [messages]);
 
   const handleSend = (text: string) => {
-    sendMessage(text).catch(() => {
-      // error is already set in hook state
-    });
+    sendMessage(text)
+      .then((response) => {
+        if (!selectedConversationId && response?.conversationId) {
+          router.replace(`/dashboard/chat?conversationId=${response.conversationId}`);
+        }
+      })
+      .catch(() => {
+        // error is already set in hook state
+      });
   };
 
   const handleRetry = () => {

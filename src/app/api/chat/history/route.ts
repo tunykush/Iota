@@ -19,7 +19,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("conversations")
-    .select("id, title, created_at, updated_at")
+    .select("id, title, created_at, updated_at, conversation_messages(count)")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
@@ -36,7 +36,7 @@ export async function GET() {
       title: conversation.title ?? undefined,
       createdAt: conversation.created_at,
       updatedAt: conversation.updated_at,
-      messageCount: 0,
+      messageCount: conversation.conversation_messages?.[0]?.count ?? 0,
     })),
   };
   return NextResponse.json(body);
