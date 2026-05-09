@@ -23,10 +23,10 @@ function defaultProviders(): LlmProvider[] {
   ];
 }
 
-function withTimeout(ms: number): AbortController {
+function withTimeout(ms: number): { controller: AbortController; clear: () => void } {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), ms);
-  return controller;
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { controller, clear: () => clearTimeout(timer) };
 }
 
 export async function generateWithFallback(
@@ -48,13 +48,15 @@ export async function generateWithFallback(
       continue;
     }
 
-    const controller = withTimeout(timeoutMs);
+    const timeout = withTimeout(timeoutMs);
     const started = Date.now();
     try {
-      const result = await provider.generate({ ...request, signal: controller.signal });
+      const result = await provider.generate({ ...request, signal: timeout.controller.signal });
+      timeout.clear();
       attempts.push({ provider: provider.id, model: provider.model, ok: true, latencyMs: Date.now() - started });
       return { ...result, attempts };
     } catch (error) {
+      timeout.clear();
       attempts.push({
         provider: provider.id,
         model: provider.model,

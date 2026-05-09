@@ -167,6 +167,28 @@ export function useDeleteDocument() {
   return { deleteDocument, deleting, error };
 }
 
+// ─── useRetryDocumentIngestion ─────────────────────────────────
+export function useRetryDocumentIngestion() {
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const retryDocument = useCallback(async (documentId: string) => {
+    setRetrying(documentId);
+    setError(null);
+    try {
+      return await documentsApi.retryIngestion(documentId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Retry failed";
+      setError(msg);
+      throw err;
+    } finally {
+      setRetrying(null);
+    }
+  }, []);
+
+  return { retryDocument, retrying, error };
+}
+
 // ─── useJobPolling — poll ingestion job until terminal state ───
 export function useJobPolling(jobId: string | null, intervalMs = 2000) {
   const [job, setJob] = useState<IngestionJob | null>(null);

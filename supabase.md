@@ -136,6 +136,57 @@ create index if not exists idx_document_chunks_embedding_hnsw
   using hnsw (embedding vector_cosine_ops);
 ```
 
+RPC vector search cho Phase 4B:
+
+```sql
+create or replace function public.match_document_chunks(
+  query_embedding vector(1536),
+  match_count integer default 5,
+  filter_user_id uuid default auth.uid(),
+  filter_document_ids uuid[] default null
+)
+returns table (
+  id uuid,
+  document_id uuid,
+  chunk_index integer,
+  text text,
+  source_type text,
+  page_number integer,
+  url text,
+  metadata jsonb,
+  title text,
+  document_source_type text,
+  document_url text,
+  similarity double precision
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    c.id,
+    c.document_id,
+    c.chunk_index,
+    c.text,
+    c.source_type,
+    c.page_number,
+    c.url,
+    c.metadata,
+    d.title,
+    d.source_type as document_source_type,
+    d.url as document_url,
+    1 - (c.embedding <=> query_embedding) as similarity
+  from public.document_chunks c
+  join public.documents d on d.id = c.document_id
+  where c.user_id = filter_user_id
+    and c.embedding is not null
+    and (filter_document_ids is null or c.document_id = any(filter_document_ids))
+  order by c.embedding <=> query_embedding
+  limit least(greatest(match_count, 1), 20);
+$$;
+```
+
 __Step 4A.3: Tự Cập Nhật `updated_at`__ Chạy tiếp:
 
 ```sql

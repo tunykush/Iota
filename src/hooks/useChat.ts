@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from "react";
 import { chatApi } from "@/lib/api/client";
 import type {
   ChatRequest,
+  ChatRetrievalDiagnostics,
   ChatSource,
   Conversation,
   ConversationMessage,
@@ -21,6 +22,7 @@ export type LocalMessage = {
   sources?: ChatSource[];
   provider?: string;
   model?: string;
+  diagnostics?: ChatRetrievalDiagnostics;
   isStreaming?: boolean;
 };
 
@@ -68,6 +70,7 @@ export function useChat(initialConversationId?: string | null) {
             sources: m.sources,
             provider: m.provider,
             model: m.model,
+            diagnostics: m.diagnostics,
           })),
         );
       })
@@ -132,6 +135,7 @@ export function useChat(initialConversationId?: string | null) {
               sources: response.sources,
               provider: response.message.provider,
               model: response.message.model,
+              diagnostics: response.message.diagnostics ?? response.diagnostics,
             }),
         );
 

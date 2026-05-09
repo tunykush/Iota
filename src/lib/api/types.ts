@@ -52,7 +52,7 @@ export type UploadPdfResponse = {
   document: Pick<Document, "id" | "sourceType" | "title" | "status" | "createdAt">;
   job: {
     id: string;
-    status: "queued";
+    status: JobStatus;
   };
 };
 
@@ -66,7 +66,7 @@ export type CrawlUrlResponse = {
   document: Pick<Document, "id" | "sourceType" | "title" | "status"> & { url: string };
   job: {
     id: string;
-    status: "queued";
+    status: JobStatus;
   };
 };
 
@@ -96,6 +96,15 @@ export type ChatSource = {
   snippet: string;
 };
 
+export type ChatRetrievalDiagnostics = {
+  mode: ChatGenerationMode;
+  requestedTopK: number;
+  returnedChunks: number;
+  scopedDocumentIds: string[];
+  sourceTitles: string[];
+  topScore?: number;
+};
+
 export type ChatMessageResponse = {
   id: string;
   role: "assistant";
@@ -103,6 +112,7 @@ export type ChatMessageResponse = {
   createdAt: string;
   provider?: string;
   model?: string;
+  diagnostics?: ChatRetrievalDiagnostics;
 };
 
 export type ChatGenerationMode = "auto" | "llm" | "local";
@@ -120,6 +130,7 @@ export type ChatResponse = {
   conversationId: string;
   message: ChatMessageResponse;
   sources: ChatSource[];
+  diagnostics?: ChatRetrievalDiagnostics;
 };
 
 export type Conversation = {
@@ -142,6 +153,7 @@ export type ConversationMessage = {
   sources?: ChatSource[];
   provider?: string;
   model?: string;
+  diagnostics?: ChatRetrievalDiagnostics;
 };
 
 export type ConversationDetailResponse = {

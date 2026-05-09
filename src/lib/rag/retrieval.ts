@@ -1,5 +1,7 @@
-﻿import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatSource } from "@/lib/api/types";
+import { embedTexts } from "@/lib/embeddings";
+import { planContextQueries } from "./context-orchestrator";
 
 export type RetrievedChunk = ChatSource & {
   text: string;
@@ -53,6 +55,18 @@ type ChunkRow = {
         url: string | null;
       }[]
     | null;
+};
+
+type MatchChunkRow = Omit<ChunkRow, "documents"> & {
+  title: string | null;
+  document_source_type: ChatSource["sourceType"] | null;
+  document_url: string | null;
+  similarity: number | null;
+};
+
+type ScoredRetrievedChunk = RetrievedChunk & {
+  vectorScore?: number;
+  keywordScore?: number;
 };
 
 type ChunkDocument = {
@@ -122,25 +136,69 @@ function buildSnippet(query: string, text: string): string {
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
 }
 
+function isSummaryQuery(query: string): boolean {
+  return /\b(summarize|summary|overview|brief)\b|tóm\s*tắt|tổng\s*quan/iu.test(query);
+}
+
 function toText(row: ChunkRow): string {
   const metadataText = typeof row.metadata?.text === "string" ? row.metadata.text : null;
   const metadataContent = typeof row.metadata?.content === "string" ? row.metadata.content : null;
   return row.text ?? metadataText ?? metadataContent ?? "";
 }
 
-export async function retrieveRelevantChunks(input: {
+function toRetrievedFromMatch(row: MatchChunkRow): ScoredRetrievedChunk {
+  const text = toText({ ...row, documents: null }).trim();
+  const vectorScore = Number((row.similarity ?? 0).toFixed(3));
+  return {
+    documentId: row.document_id,
+    chunkId: row.id,
+    title: row.title ?? "Untitled document",
+    sourceType: row.source_type ?? row.document_source_type ?? "pdf",
+    pageNumber: row.page_number ?? undefined,
+    url: row.url ?? row.document_url ?? undefined,
+    score: vectorScore,
+    vectorScore,
+    snippet: buildSnippet("", text),
+    text,
+  };
+}
+
+async function retrieveVectorChunks(input: {
   supabase: SupabaseClient;
   userId: string;
   query: string;
-  topK?: number;
+  topK: number;
   documentIds?: string[];
-}): Promise<RetrievedChunk[]> {
-  const topK = Math.max(1, Math.min(input.topK ?? 5, 10));
+}): Promise<ScoredRetrievedChunk[]> {
+  const { embeddings } = await embedTexts([input.query]);
+  const { data, error } = await input.supabase.rpc("match_document_chunks", {
+    query_embedding: embeddings[0],
+    match_count: input.topK,
+    filter_user_id: input.userId,
+    filter_document_ids: input.documentIds?.length ? input.documentIds : null,
+  });
+
+  if (error) throw new Error(`Vector retrieval failed: ${error.message}`);
+
+  return ((data ?? []) as MatchChunkRow[])
+    .map(toRetrievedFromMatch)
+    .filter((chunk) => chunk.text.length > 0);
+}
+
+async function retrieveKeywordChunks(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  query: string;
+  topK: number;
+  documentIds?: string[];
+}): Promise<ScoredRetrievedChunk[]> {
+  const fetchLimit = isSummaryQuery(input.query) ? Math.max(200, input.topK * 30) : 200;
   let query = input.supabase
     .from("document_chunks")
     .select("id, document_id, chunk_index, text, source_type, page_number, url, metadata, documents(title, source_type, url)")
     .eq("user_id", input.userId)
-    .limit(200);
+    .order("chunk_index", { ascending: true })
+    .limit(fetchLimit);
 
   if (input.documentIds?.length) {
     query = query.in("document_id", input.documentIds);
@@ -151,12 +209,12 @@ export async function retrieveRelevantChunks(input: {
     throw new Error(`Failed to retrieve document chunks: ${error.message}`);
   }
 
-  const rows = (data ?? []) as ChunkRow[];
-  const chunks = rows
+  const chunks = ((data ?? []) as ChunkRow[])
     .map((row, index) => {
       const text = toText(row).trim();
       const document = firstDocument(row);
       const title = document?.title ?? "Untitled document";
+      const keywordScore = scoreChunk(input.query, text, title, row.chunk_index ?? index);
       return {
         documentId: row.document_id,
         chunkId: row.id,
@@ -164,16 +222,83 @@ export async function retrieveRelevantChunks(input: {
         sourceType: row.source_type ?? document?.source_type ?? "pdf",
         pageNumber: row.page_number ?? undefined,
         url: row.url ?? document?.url ?? undefined,
-        score: scoreChunk(input.query, text, title, row.chunk_index ?? index),
+        score: keywordScore,
+        keywordScore,
         snippet: buildSnippet(input.query, text),
         text,
-      } satisfies RetrievedChunk;
+      } satisfies ScoredRetrievedChunk;
     })
-    .filter((chunk) => chunk.text.length > 0)
+    .filter((chunk) => chunk.text.length > 0);
+
+  if (isSummaryQuery(input.query)) {
+    return chunks.slice(0, input.topK);
+  }
+
+  return chunks.sort((a, b) => b.score - a.score).slice(0, input.topK);
+}
+
+function normalizeScore(score: number, maxScore: number): number {
+  if (maxScore <= 0) return 0;
+  return Math.max(0, Math.min(score / maxScore, 1));
+}
+
+function mergeHybridChunks(vectorChunks: ScoredRetrievedChunk[], keywordChunks: ScoredRetrievedChunk[], topK: number): RetrievedChunk[] {
+  const merged = new Map<string, ScoredRetrievedChunk>();
+  const maxVectorScore = Math.max(0, ...vectorChunks.map((chunk) => chunk.vectorScore ?? chunk.score));
+  const maxKeywordScore = Math.max(0, ...keywordChunks.map((chunk) => chunk.keywordScore ?? chunk.score));
+
+  for (const chunk of [...vectorChunks, ...keywordChunks]) {
+    const existing = merged.get(chunk.chunkId);
+    merged.set(chunk.chunkId, {
+      ...(existing ?? chunk),
+      vectorScore: Math.max(existing?.vectorScore ?? 0, chunk.vectorScore ?? 0),
+      keywordScore: Math.max(existing?.keywordScore ?? 0, chunk.keywordScore ?? 0),
+      snippet: existing?.snippet && existing.snippet.length > chunk.snippet.length ? existing.snippet : chunk.snippet,
+    });
+  }
+
+  return Array.from(merged.values())
+    .map((chunk) => {
+      const vector = normalizeScore(chunk.vectorScore ?? 0, maxVectorScore);
+      const keyword = normalizeScore(chunk.keywordScore ?? 0, maxKeywordScore);
+      const hybridScore = Number((vector * 0.62 + keyword * 0.38).toFixed(3));
+      return { ...chunk, score: hybridScore };
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
+}
+
+export type RetrieveRelevantChunksInput = {
+  supabase: SupabaseClient;
+  userId: string;
+  query: string;
+  topK?: number;
+  documentIds?: string[];
+};
+
+export async function retrieveRelevantChunks(input: RetrieveRelevantChunksInput): Promise<RetrievedChunk[]> {
+  const summaryQuery = isSummaryQuery(input.query);
+  const requestedTopK = input.topK ?? (summaryQuery ? 12 : 5);
+  const topK = Math.max(1, Math.min(summaryQuery ? Math.max(requestedTopK, 12) : requestedTopK, summaryQuery ? 20 : 10));
+  const retrievalQuery = planContextQueries(input.query).join(" ");
+  let chunks: RetrievedChunk[] = [];
+
+  if (summaryQuery) {
+    chunks = await retrieveKeywordChunks({ ...input, query: retrievalQuery, topK });
+  } else try {
+    const [vectorChunks, keywordChunks] = await Promise.all([
+      retrieveVectorChunks({ ...input, query: retrievalQuery, topK: Math.min(topK * 2, 20) }),
+      retrieveKeywordChunks({ ...input, query: retrievalQuery, topK: Math.min(topK * 2, 20) }),
+    ]);
+    chunks = mergeHybridChunks(vectorChunks, keywordChunks, topK);
+  } catch {
+    chunks = await retrieveKeywordChunks({ ...input, query: retrievalQuery, topK });
+  }
 
   if (chunks.length === 0) {
+    if (input.documentIds?.length) {
+      throw new Error("No indexed document chunks found for the selected source. Choose All sources or re-ingest this source before chatting.");
+    }
     throw new Error("No indexed document chunks found for this user. Upload and ingest documents before chatting.");
   }
 

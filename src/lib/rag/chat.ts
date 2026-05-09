@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatGenerationMode, ChatSource } from "@/lib/api/types";
 import { generateWithFallback } from "@/lib/llm/router";
-import { buildRagMessages } from "./prompts";
+import { reflectAndImproveAnswer, retrieveAgenticContext, runCollaborativeRagAgents, runToolUseRagAgent, type AgenticRagTrace } from "./agentic-rag";
+import { orchestrateContext, type ContextOrchestratorDiagnostics } from "./context-orchestrator";
+import { buildRagMessages, buildToolAugmentedRagMessages } from "./prompts";
 import { retrieveRelevantChunks, type RetrievedChunk } from "./retrieval";
 
 export type RagChatResult = {
@@ -11,6 +13,16 @@ export type RagChatResult = {
     provider: string;
     model: string;
     attempts: unknown[];
+    diagnostics: {
+      mode: ChatGenerationMode;
+      requestedTopK: number;
+      returnedChunks: number;
+      scopedDocumentIds: string[];
+      sourceTitles: string[];
+      topScore?: number;
+      agentic?: AgenticRagTrace;
+      contextOrchestrator?: ContextOrchestratorDiagnostics;
+    };
   };
 };
 
@@ -32,6 +44,14 @@ type EvidenceGroup = {
   sourceIndexes: number[];
   confidenceScore: number;
   matchedKeywords: string[];
+};
+
+type DocumentSummarySection = {
+  title: string;
+  sentence: string;
+  chunk: RetrievedChunk;
+  sourceIndex: number;
+  kind: "overview" | "requirements" | "deliverables" | "constraints" | "assessment" | "context";
 };
 
 type LocalAnswerPlan = {
@@ -90,6 +110,17 @@ function getDefaultRagChatMode(): ChatGenerationMode {
 
 function resolveRagChatMode(mode?: ChatGenerationMode): ChatGenerationMode {
   return mode ?? getDefaultRagChatMode();
+}
+
+function shouldUseAgenticRag() {
+  return process.env.AGENTIC_RAG_ENABLED !== "false";
+}
+
+function envFlagEnabled(name: string, defaultValue = true) {
+  const value = process.env[name]?.toLowerCase();
+  if (value === "false" || value === "0" || value === "off") return false;
+  if (value === "true" || value === "1" || value === "on") return true;
+  return defaultValue;
 }
 
 function normalizeLocal(text: string): string {
@@ -254,12 +285,107 @@ export function calculateLocalConfidence(query: string, evidenceGroups: Evidence
   return "low";
 }
 
+function cleanSummaryText(text: string): string {
+  return text
+    .replace(/RMIT University\s*[–-]\s*/giu, "")
+    .replace(/Confidential\s*[–-]\s*For RMIT Students Only\s*[–-]\s*Do not distribute/giu, "")
+    .replace(/COSC2824\s*[–-]\s*Cloud Operations\s*[–-]\s*Assignment\s*2\s*\d*/giu, "")
+    .replace(/Table of Contents\s*\d*\.?/giu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLowValueSummaryText(text: string): boolean {
+  const normalized = normalizeLocal(text);
+  if (normalized.length < 45) return true;
+  return [
+    "confidential",
+    "do not distribute",
+    "table of contents",
+    "rmit university school",
+    "assignment 2 cloud operations project total",
+  ].some((noise) => normalized.includes(noise));
+}
+
+function firstUsefulSentence(text: string): string | null {
+  const candidates = splitSentences(cleanSummaryText(text));
+  const sentence = candidates.find((item) => !isLowValueSummaryText(item)) ?? cleanSummaryText(text);
+  if (!sentence || sentence.length < 20) return null;
+  return sentence.length > 240 ? `${sentence.slice(0, 237).trim()}...` : sentence;
+}
+
+function formatPageCitation(chunk: RetrievedChunk, sourceIndex: number): string {
+  return chunk.pageNumber ? `[${sourceIndex}, p. ${chunk.pageNumber}]` : `[${sourceIndex}]`;
+}
+
+function classifySummarySection(text: string): DocumentSummarySection["kind"] {
+  const normalized = normalizeLocal(text);
+  if (/deliverable|submit|submission|report|video|github|url|artifact|nộp|bài nộp/iu.test(normalized)) return "deliverables";
+  if (/requirement|must|should|load balancer|vpc|database|budget|constraint|yêu cầu/iu.test(normalized)) return "requirements";
+  if (/mark|rubric|criteria|assessment|grade|100 marks|điểm/iu.test(normalized)) return "assessment";
+  if (/budget|deadline|limit|constraint|disable|50/iu.test(normalized)) return "constraints";
+  if (/scenario|background|context|mom|pop|cafe|khách|bối cảnh/iu.test(normalized)) return "context";
+  return "overview";
+}
+
+function buildDocumentSummarySections(chunks: RetrievedChunk[]): DocumentSummarySection[] {
+  const sections: DocumentSummarySection[] = [];
+  const seen = new Set<string>();
+  for (const [index, chunk] of chunks.entries()) {
+    const sentence = firstUsefulSentence(chunk.text);
+    if (!sentence) continue;
+    const key = meaningKey(sentence);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const kind = classifySummarySection(sentence);
+    const titleByKind: Record<DocumentSummarySection["kind"], string> = {
+      overview: "Tổng quan",
+      requirements: "Yêu cầu kỹ thuật",
+      deliverables: "Deliverables / phần cần nộp",
+      constraints: "Ràng buộc cần chú ý",
+      assessment: "Cách chấm điểm",
+      context: "Bối cảnh dự án",
+    };
+    sections.push({ title: titleByKind[kind], sentence, chunk, sourceIndex: index + 1, kind });
+  }
+  const priority: DocumentSummarySection["kind"][] = ["context", "requirements", "deliverables", "constraints", "assessment", "overview"];
+  return sections
+    .sort((a, b) => priority.indexOf(a.kind) - priority.indexOf(b.kind) || a.sourceIndex - b.sourceIndex)
+    .slice(0, 8);
+}
+
+function buildLocalDocumentSummary(chunks: RetrievedChunk[]): string {
+  const sections = buildDocumentSummarySections(chunks);
+  const docTitle = chunks[0]?.title ?? "document";
+  const overview = sections.length > 0
+    ? sections.map((section) => `- ${section.title}: ${section.sentence} ${formatPageCitation(section.chunk, section.sourceIndex)}`).join("\n")
+    : chunks.slice(0, 6).map((chunk, index) => `- ${firstUsefulSentence(chunk.text) ?? chunk.snippet} ${formatPageCitation(chunk, index + 1)}`).join("\n");
+
+  const actionItems = sections
+    .filter((section) => ["requirements", "deliverables", "constraints", "assessment"].includes(section.kind))
+    .slice(0, 5)
+    .map((section, index) => `${index + 1}. ${section.kind === "deliverables" ? "Chuẩn bị phần nộp" : section.kind === "assessment" ? "Đối chiếu rubric/marks" : section.kind === "constraints" ? "Kiểm tra ràng buộc" : "Triển khai yêu cầu"}: ${section.sentence} ${formatPageCitation(section.chunk, section.sourceIndex)}`)
+    .join("\n") || "1. Đọc các source được cite ngay trong từng bullet để xác định yêu cầu chính trước khi làm.";
+
+  return `Tóm tắt tài liệu "${docTitle}":\n${overview}\n\nBạn cần làm gì:\n${actionItems}`;
+}
+
 function cite(group: EvidenceGroup): string {
   return group.sourceIndexes.slice(0, 3).map((index) => `[${index}]`).join("");
 }
 
 function claimText(group: EvidenceGroup): string {
   return group.mainClaim.replace(/\s+/g, " ").trim().replace(/[.;:]$/, "");
+}
+
+function quotedEvidenceText(group: EvidenceGroup, limit = 360): string {
+  const text = cleanSummaryText(group.supportingSentences[0]?.text ?? group.mainClaim).replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit - 3).trim()}...` : text;
+}
+
+function quoteBlock(groups: EvidenceGroup[], limit = 5): string {
+  const quotes = groups.slice(0, limit).map((group, index) => `${index + 1}. "${quotedEvidenceText(group)}" ${cite(group)}`);
+  return quotes.length ? `\n\nTrích đoạn từ tài liệu:\n${quotes.join("\n")}` : "";
 }
 
 function comparisonCells(groups: EvidenceGroup[]): { left: string; right: string } {
@@ -270,42 +396,46 @@ function comparisonCells(groups: EvidenceGroup[]): { left: string; right: string
 function renderLocalSynthesis(query: string, intent: LocalIntent, plan: LocalAnswerPlan, confidence: LocalConfidence, groups: EvidenceGroup[]): string {
   void intent;
   if (confidence === "low") {
-    const related = groups.slice(0, 3).map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n") || "- Không có đoạn nào đủ mạnh để xác minh trực tiếp.";
-    return `Local fallback found related information, but not enough evidence to answer confidently.\n\nRelated findings:\n${related}\n\nBạn nên upload/search thêm tài liệu có keyword gần với: ${expandLocalQuery(query).slice(0, 8).join(", ")}. Local fallback không thể suy luận vượt quá text đã retrieve.`;
+    const related = groups.slice(0, 3).map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n") || "- Mình chưa thấy đoạn nào đủ sát để trả lời chắc chắn.";
+    return `Mình chưa đủ dữ liệu để trả lời chắc chắn. Các đoạn gần nhất mình thấy là:\n${related}${quoteBlock(groups, 3)}\n\nBạn có thể hỏi cụ thể hơn hoặc upload thêm tài liệu có liên quan đến: ${expandLocalQuery(query).slice(0, 6).join(", ")}.`;
   }
 
   const top = groups.slice(0, plan.bulletCount);
   const limitation = confidence === "medium" ? "\n\nNote: confidence is medium, so this answer only states what the local documents directly support." : "";
   if (plan.format === "definition") {
-    return `Based on the local documents, ${claimText(top[0])} ${cite(top[0])}\n\nKey details:\n${top.slice(1).map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}${limitation}`;
+    return `${claimText(top[0])} ${cite(top[0])}\n\nChi tiết chính:\n${top.slice(1).map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}${quoteBlock(top)}${limitation}`;
   }
   if (plan.format === "steps") {
-    return `Locally, the safest flow is:\n${top.map((group, index) => `${index + 1}. ${claimText(group)} ${cite(group)}`).join("\n")}\n\nThis is based only on the retrieved local evidence.${limitation}`;
+    return `Bạn có thể làm theo thứ tự này:\n${top.map((group, index) => `${index + 1}. ${claimText(group)} ${cite(group)}`).join("\n")}${quoteBlock(top)}${limitation}`;
   }
   if (plan.format === "troubleshooting") {
-    return `The likely issue is: ${claimText(top[0])} ${cite(top[0])}\n\nTry:\n${top.slice(1).map((group, index) => `${index + 1}. ${claimText(group)} ${cite(group)}`).join("\n") || `1. Check the cited source details ${cite(top[0])}`}\n\nLocal fallback cannot infer causes beyond the retrieved notes.${limitation}`;
+    return `Khả năng cao vấn đề nằm ở: ${claimText(top[0])} ${cite(top[0])}\n\nBạn thử:\n${top.slice(1).map((group, index) => `${index + 1}. ${claimText(group)} ${cite(group)}`).join("\n") || `1. Kiểm tra lại đoạn được trích ${cite(top[0])}`}${quoteBlock(top)}${limitation}`;
   }
   if (plan.format === "comparison_table") {
     const cells = comparisonCells(top);
-    return `Local comparison from retrieved evidence:\n\n| Aspect | Option A | Option B | Evidence |\n| --- | --- | --- | --- |\n| Main difference | ${cells.left} | ${cells.right} | ${top.map(cite).join(" ")} |\n\nSummary: ${top.map(claimText).slice(0, 2).join(" Meanwhile, ")}.${limitation}`;
+    return `Local comparison from retrieved evidence:\n\n| Aspect | Option A | Option B | Evidence |\n| --- | --- | --- | --- |\n| Main difference | ${cells.left} | ${cells.right} | ${top.map(cite).join(" ")} |\n\nSummary: ${top.map(claimText).slice(0, 2).join(" Meanwhile, ")}.${quoteBlock(top)}${limitation}`;
   }
   if (plan.format === "summary") {
-    return `Concise local summary:\n${top.map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}${limitation}`;
+    return `Tóm tắt chi tiết:\n${top.map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}\n\nĐiểm nên chú ý:\n${top.slice(0, 3).map((group, index) => `${index + 1}. ${claimText(group)} ${cite(group)}`).join("\n")}${quoteBlock(top)}${limitation}`;
   }
-  return `Direct local answer:\n${top.map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}${limitation}`;
+  return `Mình tìm thấy các ý chính sau:\n${top.map((group) => `- ${claimText(group)} ${cite(group)}`).join("\n")}\n\nDiễn giải thêm: các ý trên được rút trực tiếp từ những đoạn liên quan nhất trong tài liệu, nên bạn có thể dùng chúng làm base để viết câu trả lời hoặc checklist.${quoteBlock(top)}${limitation}`;
 }
 
 function sourceTransparency(chunks: RetrievedChunk[], groups: EvidenceGroup[], confidence: LocalConfidence): string {
-  const selected = chunks.slice(0, 3).map((chunk, index) => {
+  const selected = chunks.slice(0, 5).map((chunk, index) => {
     const matched = Array.from(new Set(groups.filter((group) => group.sourceIndexes.includes(index + 1)).flatMap((group) => group.matchedKeywords))).slice(0, 6);
     const location = chunk.pageNumber ? `p. ${chunk.pageNumber}` : chunk.url ?? chunk.sourceType;
-    const why = matched.length > 0 ? `matched: ${matched.join(", ")}` : `retrieval score: ${chunk.score.toFixed(2)}`;
-    return `[${index + 1}] ${chunk.title} (${location}) — ${why} — confidence: ${confidence}`;
+    const why = matched.length > 0 ? `matched: ${matched.join(", ")}` : `được dùng làm ngữ cảnh`;
+    return `[${index + 1}] ${chunk.title} (${location}) — ${why}`;
   }).join("\n");
-  return `Nguồn ưu tiên:\n${selected}`;
+  return `Ref đã dùng:\n${selected}\nMức tin cậy local: ${confidence}.`;
 }
 
 export function buildExtractiveAnswer(message: string, chunks: RetrievedChunk[]): string {
+  if (detectLocalIntent(message) === "summary") {
+    return buildLocalDocumentSummary(chunks);
+  }
+
   const ranked = uniqueTopSentences(rankLocalSentences(message, chunks), 12);
   const evidenceGroups = groupEvidenceBySourceAndMeaning(ranked).slice(0, 6);
   const intent = detectLocalIntent(message);
@@ -313,10 +443,7 @@ export function buildExtractiveAnswer(message: string, chunks: RetrievedChunk[])
   const confidence = calculateLocalConfidence(message, evidenceGroups, topScore);
   const plan = buildLocalAnswerPlan(message, intent, evidenceGroups);
   const answer = renderLocalSynthesis(message, intent, plan, confidence, evidenceGroups);
-  const verified = plan.includeVerifiedLocally && confidence !== "low"
-    ? `\n\nWhat I could verify locally: ${evidenceGroups.slice(0, 3).map((group) => claimText(group)).join("; ")}.`
-    : "";
-  return `${answer}${verified}\n\n${sourceTransparency(chunks, evidenceGroups, confidence)}`;
+  return answer;
 }
 
 export async function runHybridRagChat(input: {
@@ -327,15 +454,39 @@ export async function runHybridRagChat(input: {
   documentIds?: string[];
   mode?: ChatGenerationMode;
 }): Promise<RagChatResult> {
-  const chunks = await retrieveRelevantChunks({
-    supabase: input.supabase,
-    userId: input.userId,
-    query: input.message,
-    topK: input.topK,
-    documentIds: input.documentIds,
-  });
+  const agenticEnabled = shouldUseAgenticRag();
+  const retrievalResult = agenticEnabled
+    ? await retrieveAgenticContext({
+      supabase: input.supabase,
+      userId: input.userId,
+      question: input.message,
+      topK: input.topK,
+      documentIds: input.documentIds,
+    })
+    : {
+      chunks: await retrieveRelevantChunks({
+        supabase: input.supabase,
+        userId: input.userId,
+        query: input.message,
+        topK: input.topK,
+        documentIds: input.documentIds,
+      }),
+      trace: undefined,
+    };
+  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
+  const chunks = contextOrchestrator.chunks;
   const sources = chunks.map(({ text: _text, ...source }) => source);
   const chatMode = resolveRagChatMode(input.mode);
+  const diagnostics = {
+    mode: chatMode,
+    requestedTopK: input.topK ?? 5,
+    returnedChunks: chunks.length,
+    scopedDocumentIds: input.documentIds ?? [],
+    sourceTitles: Array.from(new Set(chunks.map((chunk) => chunk.title))).slice(0, 8),
+    topScore: chunks[0]?.score,
+    agentic: retrievalResult.trace,
+    contextOrchestrator: contextOrchestrator.diagnostics,
+  };
 
   if (chatMode === "local") {
     return {
@@ -344,6 +495,7 @@ export async function runHybridRagChat(input: {
       metadata: {
         provider: "extractive",
         model: "local-retrieval-forced",
+        diagnostics,
         attempts: [
           {
             provider: "extractive",
@@ -357,18 +509,51 @@ export async function runHybridRagChat(input: {
   }
 
   try {
+    const toolUseEnabled = agenticEnabled && envFlagEnabled("RAG_TOOL_USE_ENABLED", true);
+    const collaborativeEnabled = agenticEnabled && envFlagEnabled("RAG_COLLABORATIVE_ENABLED", true);
+    const reflectionEnabled = agenticEnabled && envFlagEnabled("RAG_REFLECTION_ENABLED", true);
+    const toolUse = toolUseEnabled
+      ? await runToolUseRagAgent({ question: input.message, chunks })
+      : { selectedTools: [], results: [] };
+    if (diagnostics.agentic) diagnostics.agentic.toolUse = toolUse;
+    const toolResults = toolUse.results.map((result) => `Tool: ${result.tool}\n${result.summary}`).join("\n\n");
     const llmResult = await generateWithFallback({
-      messages: buildRagMessages(input.message, chunks),
+      messages: toolResults ? buildToolAugmentedRagMessages(input.message, chunks, toolResults) : buildRagMessages(input.message, chunks),
       temperature: 0.2,
-      maxTokens: 900,
+      maxTokens: 2000,
     });
 
+    const collaborative = collaborativeEnabled
+      ? await runCollaborativeRagAgents({
+        question: input.message,
+        draftAnswer: llmResult.content,
+        chunks,
+        toolUse,
+        verifierEnabled: reflectionEnabled,
+      })
+      : undefined;
+    const finalAnswer = collaborative?.answer ?? (reflectionEnabled
+      ? (await reflectAndImproveAnswer({ question: input.message, answer: llmResult.content, chunks })).answer
+      : llmResult.content);
+    if (diagnostics.agentic) {
+      if (collaborative) {
+        diagnostics.agentic.collaborative = collaborative.trace;
+        const verifier = collaborative.trace.agents.find((agent) => agent.name === "verifier");
+        diagnostics.agentic.reflection = { used: verifier?.notes[0] !== "skipped_by_config", issues: collaborative.trace.finalIssues };
+      } else if (reflectionEnabled) {
+        diagnostics.agentic.reflection = { used: true, issues: [] };
+      } else {
+        diagnostics.agentic.reflection = { used: false, issues: ["skipped_by_config"] };
+      }
+    }
+
     return {
-      content: llmResult.content,
+      content: finalAnswer,
       sources,
       metadata: {
         provider: llmResult.provider,
         model: llmResult.model,
+        diagnostics,
         attempts: llmResult.attempts,
       },
     };
@@ -383,6 +568,7 @@ export async function runHybridRagChat(input: {
       metadata: {
         provider: "extractive",
         model: "local-retrieval-fallback",
+        diagnostics,
         attempts: [
           {
             provider: "extractive",

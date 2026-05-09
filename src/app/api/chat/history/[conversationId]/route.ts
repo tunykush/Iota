@@ -1,10 +1,35 @@
 // GET /api/chat/history/[conversationId]  — messages for one conversation (FR-056)
 
 import { NextRequest, NextResponse } from "next/server";
-import type { ConversationDetailResponse } from "@/lib/api/types";
+import type { ChatRetrievalDiagnostics, ConversationDetailResponse } from "@/lib/api/types";
 import { createClient } from "@/lib/supabase/server";
 
 type Params = { params: Promise<{ conversationId: string }> };
+
+function readDiagnostics(metadata: Record<string, unknown>): ChatRetrievalDiagnostics | undefined {
+  const value = metadata.diagnostics;
+  if (!value || typeof value !== "object") return undefined;
+  const diagnostics = value as Partial<ChatRetrievalDiagnostics>;
+
+  if (
+    (diagnostics.mode === "auto" || diagnostics.mode === "llm" || diagnostics.mode === "local") &&
+    typeof diagnostics.requestedTopK === "number" &&
+    typeof diagnostics.returnedChunks === "number" &&
+    Array.isArray(diagnostics.scopedDocumentIds) &&
+    Array.isArray(diagnostics.sourceTitles)
+  ) {
+    return {
+      mode: diagnostics.mode,
+      requestedTopK: diagnostics.requestedTopK,
+      returnedChunks: diagnostics.returnedChunks,
+      scopedDocumentIds: diagnostics.scopedDocumentIds.filter((id): id is string => typeof id === "string"),
+      sourceTitles: diagnostics.sourceTitles.filter((title): title is string => typeof title === "string"),
+      topScore: typeof diagnostics.topScore === "number" ? diagnostics.topScore : undefined,
+    };
+  }
+
+  return undefined;
+}
 
 export async function GET(_request: NextRequest, { params }: Params) {
   const supabase = await createClient();
@@ -100,6 +125,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     messages: (messages ?? []).map((message) => {
       const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
       const provider = typeof metadata.provider === "string" ? metadata.provider : undefined;
+      const diagnostics = readDiagnostics(metadata);
 
       return {
         id: message.id,
@@ -109,6 +135,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
         sources: sourcesByMessageId.get(message.id),
         provider,
         model: message.model ?? undefined,
+        diagnostics,
       };
     }),
   };

@@ -2,9 +2,51 @@
 // Accepts multipart/form-data with a PDF file (FR-010, FR-011, FR-012, FR-013)
 
 import { NextRequest, NextResponse } from "next/server";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { PDFParse } from "pdf-parse";
 import type { UploadPdfResponse } from "@/lib/api/types";
-import { ingestDocumentText, markIngestionFailed } from "@/lib/rag/ingestion";
+import { chunkTextWithPageNumber } from "@/lib/rag/ingestion";
+import { ragServices } from "@/lib/rag/services";
 import { createClient } from "@/lib/supabase/server";
+
+type PdfPage = {
+  num: number;
+  text: string;
+};
+
+const SCANNED_PDF_MESSAGE = "No extractable text found in this PDF. It may be scanned/image-only; OCR is not supported yet.";
+const require = createRequire(import.meta.url);
+
+function configurePdfWorker() {
+  const workerPath = join(dirname(require.resolve("pdf-parse")), "pdf.worker.mjs");
+  PDFParse.setWorker(pathToFileURL(workerPath).href);
+}
+
+function cleanPdfText(text: string): string {
+  return text.replace(/\r/g, "\n").replace(/[\t ]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function extractPdfPages(bytes: Uint8Array): Promise<PdfPage[]> {
+  configurePdfWorker();
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getText({ lineEnforce: true });
+    const pages = (result.pages ?? []) as PdfPage[];
+    const cleanedPages = pages
+      .map((page) => ({ num: page.num, text: cleanPdfText(page.text ?? "") }))
+      .filter((page) => page.text.length > 0);
+
+    if (cleanedPages.length === 0) {
+      throw new Error(SCANNED_PDF_MESSAGE);
+    }
+
+    return cleanedPages;
+  } finally {
+    await parser.destroy();
+  }
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -100,32 +142,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let chunkCount = 0;
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const latinText = new TextDecoder("latin1").decode(bytes);
-    const extractedText = latinText
-      .replace(/\r/g, "\n")
-      .replace(/[^\x09\x0a\x0d\x20-\x7e\u00c0-\u1ef9]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const pages = await extractPdfPages(bytes);
+    const chunks = pages.flatMap((page) => chunkTextWithPageNumber(page.text, page.num));
 
-    await ingestDocumentText({
+    chunkCount = await ragServices.ingestion.ingestDocumentChunks({
       supabase,
       userId: user.id,
       documentId: document.id,
       jobId: job.id,
       sourceType: "pdf",
-      text: extractedText,
-      metadata: { filename: file.name, size: file.size, extractionMode: "basic-latin1" },
+      chunks,
+      metadata: { filename: file.name, size: file.size, extractionMode: "pdf-parse", pageCount: pages.length },
     });
   } catch (error) {
-    await markIngestionFailed({
+    const message = error instanceof Error ? error.message : "Failed to ingest PDF";
+    await ragServices.ingestion.markFailed({
       supabase,
       userId: user.id,
       documentId: document.id,
       jobId: job.id,
-      message: error instanceof Error ? error.message : "Failed to ingest PDF",
+      message,
     });
+
+    return NextResponse.json(
+      { error: { code: "INGESTION_ERROR", message } },
+      { status: 422 },
+    );
   }
 
   const body: UploadPdfResponse = {
@@ -133,11 +178,11 @@ export async function POST(request: NextRequest) {
       id: document.id,
       sourceType: "pdf",
       title: document.title,
-      status: document.status,
+      status: "ready",
       createdAt: document.created_at,
     },
-    job: { id: job.id, status: "queued" },
+    job: { id: job.id, status: "succeeded" },
   };
 
-  return NextResponse.json(body, { status: 202 });
+  return NextResponse.json({ ...body, chunkCount }, { status: 201 });
 }

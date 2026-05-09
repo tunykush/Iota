@@ -2,7 +2,7 @@ import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../type
 
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-20b:free";
-const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS ?? 450);
+const OPENROUTER_DEFAULT_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS ?? 2000);
 
 export function createOpenRouterProvider(model = OPENROUTER_MODEL): LlmProvider {
   return {
@@ -23,7 +23,7 @@ export function createOpenRouterProvider(model = OPENROUTER_MODEL): LlmProvider 
           model,
           messages: request.messages,
           temperature: request.temperature ?? 0.2,
-          max_tokens: Math.min(request.maxTokens ?? OPENROUTER_MAX_TOKENS, OPENROUTER_MAX_TOKENS),
+          max_tokens: request.maxTokens ?? OPENROUTER_DEFAULT_TOKENS,
         }),
         signal: request.signal,
       });

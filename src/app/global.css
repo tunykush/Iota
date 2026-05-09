@@ -680,6 +680,7 @@ select.auth-input option:hover {
   flex-direction: column;
   height: calc(100vh - 64px);
   max-height: calc(100vh - 64px);
+  overflow: hidden;
 }
 .chat-workspace .chat-card {
   flex: 1;
@@ -762,6 +763,9 @@ select.auth-input option:hover {
   border: 1px solid var(--line);
   border-radius: 3px;
   overflow: hidden;
+  max-height: calc(100vh - 210px);
+  display: flex;
+  flex-direction: column;
 }
 .citation-panel-head {
   display: flex;
@@ -783,6 +787,7 @@ select.auth-input option:hover {
 .citation-panel-list {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 .citation-item {
   display: block;
@@ -863,11 +868,14 @@ select.auth-input option:hover {
   grid-template-columns: 1fr;
   gap: 0;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 @media (min-width: 1024px) {
   .chat-layout {
     grid-template-columns: 1fr 300px;
     gap: 16px;
+    align-items: stretch;
   }
 }
 @media (min-width: 1280px) {

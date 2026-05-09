@@ -80,7 +80,10 @@ function MessageContent({ content }: { content: string }) {
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";
   const isLocalAnswer = msg.provider === "extractive";
-  const answerBadge = isUser || !msg.provider ? null : isLocalAnswer ? "LOCAL FALLBACK" : `LLM · ${msg.provider}`;
+  const answerBadge = isUser || !msg.provider ? null : isLocalAnswer ? "LOCAL" : `LLM · ${msg.provider}`;
+  const diagnosticLabel = msg.diagnostics
+    ? `${msg.diagnostics.returnedChunks}/${msg.diagnostics.requestedTopK} chunks · ${msg.diagnostics.scopedDocumentIds.length ? "scoped" : "all sources"}`
+    : null;
 
   return (
     <div className={`msg ${isUser ? "msg-user" : "msg-bot"}`}>
@@ -90,12 +93,16 @@ function MessageBubble({ msg }: { msg: Message }) {
           <div className="mb-2 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider text-muted">
             <span className="dash-badge">{answerBadge}</span>
             {msg.model && <span className="opacity-60">{msg.model}</span>}
+            {diagnosticLabel && <span className="opacity-60">{diagnosticLabel}</span>}
           </div>
         )}
         <MessageContent content={msg.content} />
         {msg.citations && msg.citations.length > 0 && (
-          <div className="sources" aria-label="Referenced sources">
-            {msg.citations.map((c) => (
+          <details className="sources" aria-label="Referenced sources">
+            <summary className="cursor-pointer select-none font-mono text-[10px] uppercase tracking-wider text-muted">
+              {msg.citations.length} source{msg.citations.length > 1 ? "s" : ""} referenced
+            </summary>
+            {msg.citations.slice(0, 4).map((c) => (
               <div key={citationKey(msg.id, c.index, c.title, c.detail)} className="source">
                 <span className="ix">[{c.index}]</span>
                 <div>
@@ -116,7 +123,7 @@ function MessageBubble({ msg }: { msg: Message }) {
                 )}
               </div>
             ))}
-          </div>
+          </details>
         )}
         {msg.isStreaming && <span className="cur" />}
       </div>

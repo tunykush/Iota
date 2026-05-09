@@ -2,104 +2,13 @@
 // Submit a URL for website ingestion (FR-020, FR-021, FR-022, FR-023)
 
 import { NextRequest, NextResponse } from "next/server";
-import { constants } from "node:crypto";
-import http from "node:http";
-import https from "node:https";
 import type { CrawlUrlRequest, CrawlUrlResponse } from "@/lib/api/types";
-import { ingestDocumentText, markIngestionFailed, stripHtml } from "@/lib/rag/ingestion";
+import { runWebsiteIngestionWorker } from "@/lib/rag/background-worker";
+import { isBlockedPrivateUrl, isValidHttpUrl } from "@/lib/rag/website-ingestion";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-const CRAWL_TIMEOUT_MS = 10000;
-const CRAWL_USER_AGENT =
-  "Mozilla/5.0 (compatible; IotaBot/0.1; +https://iota.local) AppleWebKit/537.36";
-
-function isValidHttpUrl(raw: string): boolean {
-  try {
-    const url = new URL(raw);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function getFetchFailureCode(error: unknown): string | undefined {
-  if (!(error instanceof Error)) return undefined;
-  const cause = error.cause as { code?: string } | undefined;
-  return cause?.code;
-}
-
-function requestWithNodeHttp(url: string, allowLegacyTls = false): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const isHttps = parsed.protocol === "https:";
-    const client = isHttps ? https : http;
-    const request = client.request(
-      parsed,
-      {
-        method: "GET",
-        timeout: CRAWL_TIMEOUT_MS,
-        headers: {
-          "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "accept-language": "en-US,en;q=0.9,vi;q=0.8",
-          "user-agent": CRAWL_USER_AGENT,
-        },
-        secureOptions: allowLegacyTls ? constants.SSL_OP_LEGACY_SERVER_CONNECT : undefined,
-      },
-      (response) => {
-        const status = response.statusCode ?? 0;
-        const location = response.headers.location;
-
-        if (location && status >= 300 && status < 400) {
-          response.resume();
-          const nextUrl = new URL(location, parsed).toString();
-          requestWithNodeHttp(nextUrl, allowLegacyTls).then(resolve).catch(reject);
-          return;
-        }
-
-        response.setEncoding("utf8");
-        let text = "";
-        response.on("data", (chunk) => {
-          text += chunk;
-        });
-        response.on("end", () => resolve({ status, text }));
-      },
-    );
-
-    request.on("timeout", () => request.destroy(new Error("Website request timed out")));
-    request.on("error", reject);
-    request.end();
-  });
-}
-
-async function fetchWebsiteHtml(url: string): Promise<string> {
-  try {
-    const pageResponse = await fetch(url, {
-      headers: {
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language": "en-US,en;q=0.9,vi;q=0.8",
-        "user-agent": CRAWL_USER_AGENT,
-      },
-      signal: AbortSignal.timeout(CRAWL_TIMEOUT_MS),
-    });
-
-    if (!pageResponse.ok) {
-      throw new Error(`Website returned ${pageResponse.status}`);
-    }
-
-    return pageResponse.text();
-  } catch (error) {
-    const allowLegacyTls = getFetchFailureCode(error) === "ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED";
-    const pageResponse = await requestWithNodeHttp(url, allowLegacyTls);
-
-    if (pageResponse.status < 200 || pageResponse.status >= 300) {
-      throw new Error(`Website returned ${pageResponse.status}`);
-    }
-
-    return pageResponse.text;
-  }
-}
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -140,10 +49,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Block private/internal addresses (basic SSRF protection)
   const hostname = new URL(url).hostname;
-  const blockedPatterns = ["localhost", "127.", "0.0.0.0", "169.254.", "10.", "192.168.", "::1"];
-  if (blockedPatterns.some((p) => hostname.startsWith(p) || hostname === p.replace(".", ""))) {
+  if (isBlockedPrivateUrl(url)) {
     return NextResponse.json(
       { error: { code: "VALIDATION_ERROR", message: "URL points to a private or reserved address", details: [{ field: "url", message: "SSRF protection: private addresses are not allowed" }] } },
       { status: 400 },
@@ -193,39 +100,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  try {
-    const html = await fetchWebsiteHtml(url);
-    const text = stripHtml(html);
-    await ingestDocumentText({
-      supabase,
-      userId: user.id,
-      documentId: document.id,
-      jobId: job.id,
-      sourceType: "website",
-      text,
-      url,
-      metadata: { crawlDepth, extractedFrom: url },
-    });
-  } catch (error) {
-    await markIngestionFailed({
-      supabase,
-      userId: user.id,
-      documentId: document.id,
-      jobId: job.id,
-      message: error instanceof Error ? error.message : "Failed to ingest website",
-    });
-  }
-
   const responseBody: CrawlUrlResponse = {
     document: {
       id: document.id,
       sourceType: "website",
       title: document.title,
       url: document.url ?? url,
-      status: document.status,
+      status: "processing",
     },
     job: { id: job.id, status: "queued" },
   };
+
+  if (process.env.NODE_ENV !== "production") {
+    await runWebsiteIngestionWorker(createAdminClient(), 1, job.id, false);
+    const [{ data: updatedJob }, { data: updatedDocument }] = await Promise.all([
+      supabase
+        .from("ingestion_jobs")
+        .select("status")
+        .eq("id", job.id)
+        .eq("user_id", user.id)
+        .single(),
+      supabase
+        .from("documents")
+        .select("status")
+        .eq("id", document.id)
+        .eq("user_id", user.id)
+        .single(),
+    ]);
+
+    if (updatedDocument?.status) {
+      responseBody.document.status = updatedDocument.status;
+    }
+
+    if (updatedJob?.status) {
+      responseBody.job.status = updatedJob.status;
+    }
+  }
 
   return NextResponse.json(responseBody, { status: 202 });
 }

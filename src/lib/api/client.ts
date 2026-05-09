@@ -28,8 +28,9 @@ async function apiFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   const url = `${BASE}${path}`;
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: isFormData ? init?.headers : { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
 
@@ -74,8 +75,6 @@ export const documentsApi = {
     if (title) form.append("title", title);
     return apiFetch<UploadPdfResponse>("/documents/upload-pdf", {
       method: "POST",
-      // Let browser set multipart boundary — remove Content-Type override
-      headers: {},
       body: form,
     });
   },
@@ -85,6 +84,9 @@ export const documentsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  retryIngestion: (documentId: string) =>
+    apiFetch<CrawlUrlResponse>(`/documents/${documentId}/retry`, { method: "POST" }),
 
   delete: (documentId: string) =>
     apiFetch<void>(`/documents/${documentId}`, { method: "DELETE" }),

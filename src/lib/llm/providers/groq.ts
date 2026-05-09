@@ -2,7 +2,7 @@ import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../type
 
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1";
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
-const GROQ_MAX_TOKENS = Number(process.env.GROQ_MAX_TOKENS ?? 450);
+const GROQ_DEFAULT_TOKENS = Number(process.env.GROQ_MAX_TOKENS ?? 2000);
 
 export function createGroqProvider(model = GROQ_MODEL): LlmProvider {
   return {
@@ -21,7 +21,7 @@ export function createGroqProvider(model = GROQ_MODEL): LlmProvider {
           model,
           messages: request.messages,
           temperature: request.temperature ?? 0.2,
-          max_tokens: Math.min(request.maxTokens ?? GROQ_MAX_TOKENS, GROQ_MAX_TOKENS),
+          max_tokens: request.maxTokens ?? GROQ_DEFAULT_TOKENS,
         }),
         signal: request.signal,
       });

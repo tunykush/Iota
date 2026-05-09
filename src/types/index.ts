@@ -38,6 +38,14 @@ export type Message = {
   citations?: Citation[];
   provider?: string;
   model?: string;
+  diagnostics?: {
+    mode: string;
+    requestedTopK: number;
+    returnedChunks: number;
+    scopedDocumentIds: string[];
+    sourceTitles: string[];
+    topScore?: number;
+  };
   timestamp: number;
   isStreaming?: boolean;
 };

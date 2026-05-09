@@ -10,3 +10,7 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+[[scheduled.functions]]
+  name = "next_api_cron_ingestion"
+  cron = "*/5 * * * *"

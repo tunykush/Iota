@@ -92,15 +92,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   useEffect(() => {
-    Promise.allSettled([documentsApi.list(), chatApi.listConversations()]).then(([docsResult, chatsResult]) => {
-      if (docsResult.status === "fulfilled") {
-        setDocumentCount(docsResult.value.total);
-      }
+    let cancelled = false;
 
-      if (chatsResult.status === "fulfilled") {
-        setRecentChats(chatsResult.value.conversations.slice(0, 3));
-      }
-    });
+    const refreshSidebarData = () => {
+      Promise.allSettled([documentsApi.list(), chatApi.listConversations()]).then(([docsResult, chatsResult]) => {
+        if (cancelled) return;
+
+        if (docsResult.status === "fulfilled") {
+          setDocumentCount(docsResult.value.total);
+        }
+
+        if (chatsResult.status === "fulfilled") {
+          setRecentChats(chatsResult.value.conversations.slice(0, 3));
+        }
+      });
+    };
+
+    refreshSidebarData();
+    window.addEventListener("iota:chats-changed", refreshSidebarData);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("iota:chats-changed", refreshSidebarData);
+    };
   }, [pathname]);
 
   const navItems = NAV_ITEMS.map((item) =>

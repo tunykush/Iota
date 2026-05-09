@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { ChatRequest, ChatResponse, ConversationMessage } from "@/lib/api/types";
-import { runHybridRagChat } from "@/lib/rag/chat";
+import { ragServices } from "@/lib/rag/services";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
 
   let ragResponse;
   try {
-    ragResponse = await runHybridRagChat({
+    ragResponse = await ragServices.chat.run({
       supabase,
       userId: user.id,
       message: message.trim(),
@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         provider: ragResponse.metadata.provider,
         attempts: ragResponse.metadata.attempts,
+        diagnostics: ragResponse.metadata.diagnostics,
       },
     })
     .select("id, role, content, created_at")
@@ -219,6 +220,9 @@ export async function POST(request: NextRequest) {
     content: insertedAssistantMessage.content,
     createdAt: insertedAssistantMessage.created_at,
     sources: ragResponse.sources,
+    provider: ragResponse.metadata.provider,
+    model: ragResponse.metadata.model,
+    diagnostics: ragResponse.metadata.diagnostics,
   };
 
   void userMsg;
@@ -230,10 +234,12 @@ export async function POST(request: NextRequest) {
       role: "assistant",
       content: assistantMsg.content,
       createdAt: assistantMsg.createdAt,
-      provider: ragResponse.metadata.provider,
-      model: ragResponse.metadata.model,
+      provider: assistantMsg.provider,
+      model: assistantMsg.model,
+      diagnostics: assistantMsg.diagnostics,
     },
     sources: ragResponse.sources,
+    diagnostics: ragResponse.metadata.diagnostics,
   };
 
   return NextResponse.json(responseBody);

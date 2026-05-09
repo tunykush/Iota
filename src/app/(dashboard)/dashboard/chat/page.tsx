@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
 import { useChat } from "@/hooks/useChat";
@@ -204,12 +204,13 @@ function toMessage(m: LocalMessage): Message {
     citations: citations.length > 0 ? citations : undefined,
     provider: m.provider,
     model: m.model,
+    diagnostics: m.diagnostics,
     timestamp: new Date(m.createdAt).getTime(),
     isStreaming: m.isStreaming,
   };
 }
 
-export default function ChatPage() {
+function ChatWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedConversationId = searchParams.get("conversationId");
@@ -236,18 +237,18 @@ export default function ChatPage() {
     ? "loading"
     : loadingHistory
       ? "loading"
-    : error
-      ? "error"
-      : "idle";
+      : error
+        ? "error"
+        : "idle";
 
-  // Collect all unique citations from assistant messages
+  // Collect all unique citations from assistant messages across the full chat history.
   const allCitations = useMemo(() => {
     const seen = new Set<string>();
     const cites: Citation[] = [];
     for (const m of messages) {
       if (m.role === "assistant" && m.citations) {
         for (const c of m.citations) {
-          const key = `${c.title}-${c.index}`;
+          const key = `${c.title}-${c.detail}-${c.index}`;
           if (!seen.has(key)) {
             seen.add(key);
             cites.push(c);
@@ -284,6 +285,7 @@ export default function ChatPage() {
       .then((deleted) => {
         if (deleted) {
           setShowDeleteConfirm(false);
+          window.dispatchEvent(new Event("iota:chats-changed"));
           router.replace("/dashboard/chat");
         }
       })
@@ -296,6 +298,14 @@ export default function ChatPage() {
   const docCount = new Set(allCitations.map((c) => c.title)).size;
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const scopeLabel = selectedDocument ? selectedDocument.title : "All sources";
+
+  useEffect(() => {
+    if (!selectedDocumentId || loadingDocuments) return;
+    if (!documents.some((document) => document.id === selectedDocumentId)) {
+      setSelectedDocumentId("");
+    }
+  }, [documents, loadingDocuments, selectedDocumentId]);
+
   const scopeOptions = useMemo(
     () => [
       { value: "", label: "All sources" },
@@ -424,3 +434,16 @@ export default function ChatPage() {
     </div>
   );
 }
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted">Loading chat workspace...</div>}>
+      <ChatWorkspace />
+    </Suspense>
+  );
+}
+
+
+
+
+

@@ -2,16 +2,24 @@ import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../type
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite";
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS ?? 450);
+const GEMINI_DEFAULT_TOKENS = Number(process.env.GEMINI_MAX_TOKENS ?? 2000);
 
 function toGeminiContents(messages: LlmGenerateRequest["messages"]) {
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  let systemPrepended = false;
   return messages
     .filter((m) => m.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: system && message.role === "user" ? `${system}\n\n${message.content}` : message.content }],
-    }));
+    .map((message) => {
+      let text = message.content;
+      if (system && message.role === "user" && !systemPrepended) {
+        text = `${system}\n\n${message.content}`;
+        systemPrepended = true;
+      }
+      return {
+        role: message.role === "assistant" ? "model" : "user",
+        parts: [{ text }],
+      };
+    });
 }
 
 export function createGeminiProvider(model = GEMINI_MODEL): LlmProvider {
@@ -30,7 +38,7 @@ export function createGeminiProvider(model = GEMINI_MODEL): LlmProvider {
           contents: toGeminiContents(request.messages),
           generationConfig: {
             temperature: request.temperature ?? 0.2,
-            maxOutputTokens: Math.min(request.maxTokens ?? GEMINI_MAX_TOKENS, GEMINI_MAX_TOKENS),
+            maxOutputTokens: request.maxTokens ?? GEMINI_DEFAULT_TOKENS,
           },
         }),
         signal: request.signal,
