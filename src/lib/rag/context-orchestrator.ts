@@ -117,9 +117,30 @@ export function orchestrateContext(input: {
     chunks = chunks
       .map((chunk) => {
         const support = supportScore(queryTokens, chunk);
-        return { ...chunk, score: Number((chunk.score * 0.72 + support * 0.28).toFixed(3)) };
+        return { ...chunk, score: Number((chunk.score * 0.70 + support * 0.30).toFixed(3)) };
       })
       .sort((a, b) => b.score - a.score);
+
+    // Diversity-aware reranking: ensure representation from multiple documents
+    // (inspired by OpenRAG's multi-source aggregation)
+    if (chunks.length > 3) {
+      const diversified: typeof chunks = [];
+      const seenDocs = new Set<string>();
+      // First pass: best chunk per document
+      for (const chunk of chunks) {
+        if (!seenDocs.has(chunk.documentId)) {
+          diversified.push(chunk);
+          seenDocs.add(chunk.documentId);
+        }
+      }
+      // Second pass: fill with remaining by score
+      for (const chunk of chunks) {
+        if (!diversified.includes(chunk)) {
+          diversified.push(chunk);
+        }
+      }
+      chunks = diversified;
+    }
   }
 
   if (settings.enabled && settings.contextCompression) {
