@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useUploadPdf, useCrawlUrl, useJobPolling } from "@/hooks/useDocuments";
 import { IngestionPipeline } from "@/components/ingestion/IngestionPipeline";
 import type { IngestionJob } from "@/lib/api/types";
@@ -214,17 +214,22 @@ export default function UploadPage() {
 
   // When a job finishes, add to history
   const prevStatusRef = useRef<string | null>(null);
-  if (job && (job.status === "succeeded" || job.status === "failed") && prevStatusRef.current !== job.status) {
-    prevStatusRef.current = job.status;
-    // Use functional approach to avoid stale closure
-    setCompletedJobs((prev) => {
-      if (prev.some((j) => j.id === job.id)) return prev;
-      return [job, ...prev].slice(0, 5);
-    });
-  }
-  if (job && job.status !== "succeeded" && job.status !== "failed") {
-    prevStatusRef.current = job.status;
-  }
+  useEffect(() => {
+    if (!job) return;
+
+    if ((job.status === "succeeded" || job.status === "failed") && prevStatusRef.current !== job.status) {
+      prevStatusRef.current = job.status;
+      setCompletedJobs((prev) => {
+        if (prev.some((j) => j.id === job.id)) return prev;
+        return [job, ...prev].slice(0, 5);
+      });
+      return;
+    }
+
+    if (job.status !== "succeeded" && job.status !== "failed") {
+      prevStatusRef.current = job.status;
+    }
+  }, [job]);
 
   const handleJobStart = (jobId: string) => {
     prevStatusRef.current = null;
