@@ -21,11 +21,31 @@ export function isValidHttpUrl(raw: string): boolean {
 }
 
 export function isBlockedPrivateUrl(raw: string): boolean {
-  const hostname = new URL(raw).hostname;
+  let hostname: string;
+  try {
+    hostname = new URL(raw).hostname;
+  } catch {
+    return true; // Invalid URL — treat as blocked
+  }
   const normalized = hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase();
-  const blockedPatterns = ["localhost", "127.", "0.", "169.254.", "10.", "192.168.", "::1", "fc", "fd", "fe80:"];
+
+  // Exact matches
+  if (normalized === "localhost" || normalized === "::1" || normalized === "0.0.0.0") return true;
+
+  // IPv4 private/reserved ranges
+  const ipv4Prefixes = ["127.", "0.", "169.254.", "10.", "192.168."];
+  if (ipv4Prefixes.some((p) => normalized.startsWith(p))) return true;
   if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
-  return blockedPatterns.some((p) => normalized.startsWith(p) || normalized === p.replace(".", ""));
+
+  // IPv6 private/reserved (only check when hostname contains ":" indicating IPv6)
+  if (normalized.includes(":")) {
+    const ipv6Prefixes = ["fc", "fd", "fe80:", "::ffff:127.", "::ffff:10.", "::ffff:192.168.", "::ffff:0."];
+    if (ipv6Prefixes.some((p) => normalized.startsWith(p))) return true;
+    // IPv6-mapped 172.16-31.x.x
+    if (/^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
+  }
+
+  return false;
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -84,7 +104,10 @@ export function extractWebsiteText(html: string): string {
   const visibleText = stripHtml(html);
   if (visibleText.length >= 50) return visibleText;
 
-  return extractNextDataText(html);
+  const nextDataText = extractNextDataText(html);
+  if (nextDataText.length >= 20) return nextDataText;
+
+  throw new Error("Could not extract meaningful text from the website (page may be empty, JavaScript-rendered, or require authentication)");
 }
 
 function assertPublicHttpUrl(raw: string) {
@@ -195,7 +218,12 @@ export async function fetchWebsiteHtml(url: string): Promise<string> {
 
     return pageResponse.text();
   } catch (error) {
-    const allowLegacyTls = getFetchFailureCode(error) === "ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED";
+    // Only retry with Node.js HTTP for network/TLS errors, not HTTP status or validation errors
+    const fetchCode = getFetchFailureCode(error);
+    const isNetworkError = error instanceof TypeError || Boolean(fetchCode);
+    if (!isNetworkError) throw error;
+
+    const allowLegacyTls = fetchCode === "ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED";
     const pageResponse = await requestWithNodeHttp(url, allowLegacyTls);
 
     assertSuccessfulWebsiteResponse(pageResponse.status, pageResponse.finalUrl);

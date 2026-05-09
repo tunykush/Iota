@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+const MAX_MESSAGE_LENGTH = 32_000;
+
 function autoTitle(message: string): string {
   return message.length > 60 ? `${message.slice(0, 57)}...` : message;
 }
@@ -58,6 +60,13 @@ export async function POST(request: NextRequest) {
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return NextResponse.json(
       { error: { code: "VALIDATION_ERROR", message: "Field 'message' is required and must be non-empty", details: [{ field: "message", message: "Empty message" }] } },
+      { status: 400 },
+    );
+  }
+
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`, details: [{ field: "message", message: "Message too long" }] } },
       { status: 400 },
     );
   }
@@ -122,19 +131,6 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-
-  await supabase
-    .from("conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", finalConversationId)
-    .eq("user_id", user.id);
-
-  const userMsg: ConversationMessage = {
-    id: insertedUserMessage.id,
-    role: insertedUserMessage.role,
-    content: insertedUserMessage.content,
-    createdAt: insertedUserMessage.created_at,
-  };
 
   let ragResponse;
   try {
@@ -224,8 +220,6 @@ export async function POST(request: NextRequest) {
     model: ragResponse.metadata.model,
     diagnostics: ragResponse.metadata.diagnostics,
   };
-
-  void userMsg;
 
   const responseBody: ChatResponse = {
     conversationId: finalConversationId,

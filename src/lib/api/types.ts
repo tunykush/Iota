@@ -81,7 +81,10 @@ export type IngestionJob = {
   stage?: JobStage;
   errorMessage?: string;
   createdAt: string;
+  startedAt?: string;
   completedAt?: string;
+  totalChunks?: number;
+  embeddedChunks?: number;
 };
 
 // ─── Chat ─────────────────────────────────────────────────────

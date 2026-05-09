@@ -20,6 +20,15 @@ export function createEmbeddingProvider(): EmbeddingProvider {
   return openAiCompatible.isConfigured() ? openAiCompatible : createLocalEmbeddingProvider(dimensions);
 }
 
+// Cached singleton to avoid re-creating the provider on every call
+let _cachedProvider: EmbeddingProvider | null = null;
+function getCachedProvider(): EmbeddingProvider {
+  if (!_cachedProvider) {
+    _cachedProvider = createEmbeddingProvider();
+  }
+  return _cachedProvider;
+}
+
 export type EmbeddingModelMetadata = {
   provider: string;
   model: string;
@@ -44,7 +53,7 @@ export async function embedTexts(texts: string[]): Promise<{
   dimensions: number;
   version: string;
 }> {
-  const provider = createEmbeddingProvider();
+  const provider = getCachedProvider();
   const result = await provider.embed({ input: texts });
   return { ...result, version: `${result.provider}:${result.model}:${result.dimensions}` };
 }

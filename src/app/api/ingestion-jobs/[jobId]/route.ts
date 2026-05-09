@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   const { data: job, error } = await supabase
     .from("ingestion_jobs")
-    .select("id, document_id, status, stage, error_message, created_at, completed_at")
+    .select("id, document_id, status, stage, error_message, metadata, started_at, created_at, completed_at")
     .eq("id", jobId)
     .eq("user_id", user.id)
     .single();
@@ -35,6 +35,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
     );
   }
 
+  const meta = (job.metadata ?? {}) as Record<string, unknown>;
+
   return NextResponse.json({
     id: job.id,
     documentId: job.document_id,
@@ -42,6 +44,9 @@ export async function GET(_request: NextRequest, { params }: Params) {
     stage: job.stage as JobStage | undefined,
     errorMessage: job.error_message ?? undefined,
     createdAt: job.created_at,
+    startedAt: job.started_at ?? undefined,
     completedAt: job.completed_at ?? undefined,
+    totalChunks: typeof meta.totalChunks === "number" ? meta.totalChunks : undefined,
+    embeddedChunks: typeof meta.embeddedChunks === "number" ? meta.embeddedChunks : undefined,
   });
 }

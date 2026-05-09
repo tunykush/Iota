@@ -1,27 +1,31 @@
 import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../types";
 
-const GROQ_BASE_URL = process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1";
-const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
-const GROQ_DEFAULT_TOKENS = Number(process.env.GROQ_MAX_TOKENS ?? 2000);
+const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_GROQ_TOKENS = 2000;
 
-export function createGroqProvider(model = GROQ_MODEL): LlmProvider {
+export function createGroqProvider(model?: string): LlmProvider {
+  const resolvedModel = model ?? process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL;
+  const baseUrl = process.env.GROQ_BASE_URL ?? DEFAULT_GROQ_BASE_URL;
+  const defaultTokens = Number(process.env.GROQ_MAX_TOKENS ?? DEFAULT_GROQ_TOKENS);
+
   return {
     id: "groq",
-    model,
+    model: resolvedModel,
     isConfigured: () => Boolean(process.env.GROQ_API_KEY),
     async generate(request: LlmGenerateRequest): Promise<LlmGenerateResult> {
       const started = Date.now();
-      const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model,
+          model: resolvedModel,
           messages: request.messages,
           temperature: request.temperature ?? 0.2,
-          max_tokens: request.maxTokens ?? GROQ_DEFAULT_TOKENS,
+          max_tokens: request.maxTokens ?? defaultTokens,
         }),
         signal: request.signal,
       });
@@ -37,7 +41,7 @@ export function createGroqProvider(model = GROQ_MODEL): LlmProvider {
         throw new Error("Groq returned an empty response");
       }
 
-      return { content: content.trim(), provider: "groq", model, latencyMs: Date.now() - started };
+      return { content: content.trim(), provider: "groq", model: resolvedModel, latencyMs: Date.now() - started };
     },
   };
 }

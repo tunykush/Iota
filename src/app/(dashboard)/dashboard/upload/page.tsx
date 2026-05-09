@@ -2,11 +2,12 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useUploadPdf, useCrawlUrl, useJobPolling } from "@/hooks/useDocuments";
+import { IngestionPipeline } from "@/components/ingestion/IngestionPipeline";
+import type { IngestionJob } from "@/lib/api/types";
 
 // ─── Upload PDF panel ──────────────────────────────────────────
-function UploadPdfPanel() {
+function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void }) {
   const { upload, uploading, progress, result, error, reset } = useUploadPdf();
-  const { job } = useJobPolling(result?.job.id ?? null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -38,27 +39,12 @@ function UploadPdfPanel() {
   const handleUpload = async () => {
     if (!selectedFile) return;
     try {
-      await upload(selectedFile);
+      const data = await upload(selectedFile);
+      onJobStart(data.job.id);
     } catch {
       // error shown in UI
     }
   };
-
-  // Determine ingestion stage label
-  const jobStageLabel =
-    job?.stage === "extracting"
-      ? "Extracting text…"
-      : job?.stage === "chunking"
-        ? "Chunking content…"
-        : job?.stage === "embedding"
-          ? "Creating embeddings…"
-          : job?.stage === "storing"
-            ? "Storing chunks…"
-            : null;
-
-  const isProcessing = result && job && (job.status === "queued" || job.status === "running");
-  const isDone = result && job?.status === "succeeded";
-  const isFailed = result && job?.status === "failed";
 
   return (
     <div className="border border-black/10 rounded-sm p-6 bg-white/40">
@@ -113,23 +99,9 @@ function UploadPdfPanel() {
         </div>
       )}
 
-      {/* Job status */}
-      {isProcessing && (
-        <div className="mb-4 flex items-center gap-2 text-xs text-muted">
-          <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-          {jobStageLabel ?? "Processing…"}
-        </div>
-      )}
-
-      {isDone && (
+      {result && (
         <div className="mb-4 p-3 border border-green-200 bg-green-50 rounded-sm text-sm text-green-700">
-          ✓ <span className="font-medium">{result.document.title}</span> ingested successfully.
-        </div>
-      )}
-
-      {isFailed && (
-        <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-sm text-sm text-red-700">
-          ✕ Ingestion failed: {job?.errorMessage ?? "Unknown error"}
+          ✓ <span className="font-medium">{result.document.title}</span> uploaded — ingestion started.
         </div>
       )}
 
@@ -144,10 +116,10 @@ function UploadPdfPanel() {
         <button
           type="button"
           onClick={handleUpload}
-          disabled={!selectedFile || uploading || !!isProcessing}
+          disabled={!selectedFile || uploading}
           className="dash-btn-primary"
         >
-          {uploading ? "Uploading…" : isProcessing ? "Processing…" : "Upload PDF"}
+          {uploading ? "Uploading…" : "Upload PDF"}
         </button>
         {(selectedFile || result) && (
           <button
@@ -164,9 +136,8 @@ function UploadPdfPanel() {
 }
 
 // ─── Crawl URL panel ───────────────────────────────────────────
-function CrawlUrlPanel() {
+function CrawlUrlPanel({ onJobStart }: { onJobStart: (jobId: string) => void }) {
   const { crawl, crawling, result, error, reset } = useCrawlUrl();
-  const { job } = useJobPolling(result?.job.id ?? null);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
 
@@ -174,15 +145,12 @@ function CrawlUrlPanel() {
     e.preventDefault();
     if (!url.trim()) return;
     try {
-      await crawl({ url: url.trim(), title: title.trim() || undefined });
+      const data = await crawl({ url: url.trim(), title: title.trim() || undefined });
+      onJobStart(data.job.id);
     } catch {
       // error shown in UI
     }
   };
-
-  const isProcessing = result && job && (job.status === "queued" || job.status === "running");
-  const isDone = result && job?.status === "succeeded";
-  const isFailed = result && job?.status === "failed";
 
   return (
     <div className="border border-black/10 rounded-sm p-5 bg-white/40">
@@ -197,7 +165,7 @@ function CrawlUrlPanel() {
             placeholder="https://docs.example.com"
             value={url}
             onChange={(e) => { setUrl(e.target.value); reset(); }}
-            disabled={crawling || !!isProcessing}
+            disabled={crawling}
           />
         </div>
         <div>
@@ -208,26 +176,13 @@ function CrawlUrlPanel() {
             placeholder="My documentation site"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            disabled={crawling || !!isProcessing}
+            disabled={crawling}
           />
         </div>
 
-        {isProcessing && (
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            Crawling…
-          </div>
-        )}
-
-        {isDone && (
+        {result && (
           <div className="p-3 border border-green-200 bg-green-50 rounded-sm text-sm text-green-700">
             ✓ <span className="font-medium">{result.document.title}</span> queued for ingestion.
-          </div>
-        )}
-
-        {isFailed && (
-          <div className="p-3 border border-red-200 bg-red-50 rounded-sm text-sm text-red-700">
-            ✕ Crawl failed: {job?.errorMessage ?? "Unknown error"}
           </div>
         )}
 
@@ -239,10 +194,10 @@ function CrawlUrlPanel() {
 
         <button
           type="submit"
-          disabled={!url.trim() || crawling || !!isProcessing}
+          disabled={!url.trim() || crawling}
           className="dash-btn"
         >
-          {crawling ? "Submitting…" : isProcessing ? "Crawling…" : "Queue crawl"}
+          {crawling ? "Submitting…" : "Queue crawl"}
         </button>
       </form>
     </div>
@@ -250,15 +205,32 @@ function CrawlUrlPanel() {
 }
 
 // ─── Page ──────────────────────────────────────────────────────
-const PIPELINE_STEPS = [
-  "Validate source",
-  "Extract text",
-  "Chunk content",
-  "Create embeddings",
-  "Index for chat",
-];
-
 export default function UploadPage() {
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const { job } = useJobPolling(activeJobId, 1500);
+
+  // Track completed jobs for history display
+  const [completedJobs, setCompletedJobs] = useState<IngestionJob[]>([]);
+
+  // When a job finishes, add to history
+  const prevStatusRef = useRef<string | null>(null);
+  if (job && (job.status === "succeeded" || job.status === "failed") && prevStatusRef.current !== job.status) {
+    prevStatusRef.current = job.status;
+    // Use functional approach to avoid stale closure
+    setCompletedJobs((prev) => {
+      if (prev.some((j) => j.id === job.id)) return prev;
+      return [job, ...prev].slice(0, 5);
+    });
+  }
+  if (job && job.status !== "succeeded" && job.status !== "failed") {
+    prevStatusRef.current = job.status;
+  }
+
+  const handleJobStart = (jobId: string) => {
+    prevStatusRef.current = null;
+    setActiveJobId(jobId);
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-2">
@@ -275,28 +247,49 @@ export default function UploadPage() {
 
       <div className="grid lg:grid-cols-[1.2fr_.8fr] gap-5">
         {/* Left: PDF upload */}
-        <UploadPdfPanel />
+        <UploadPdfPanel onJobStart={handleJobStart} />
 
-        {/* Right: URL crawl + pipeline */}
+        {/* Right: URL crawl + live pipeline */}
         <div className="space-y-4">
-          <CrawlUrlPanel />
+          <CrawlUrlPanel onJobStart={handleJobStart} />
 
-          <div className="border border-black/10 rounded-sm p-5 bg-white/40">
-            <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-3">
-              Ingestion pipeline
-            </div>
-            {PIPELINE_STEPS.map((step, index) => (
-              <div
-                key={step}
-                className="flex items-center gap-3 py-2 border-b border-black/[0.06] last:border-b-0"
-              >
-                <span className="w-5 h-5 rounded-full border border-black/10 flex items-center justify-center text-[10px] font-mono text-muted">
-                  {index + 1}
-                </span>
-                <span className="text-xs">{step}</span>
+          {/* Live pipeline tracker — shows when a job is active */}
+          <IngestionPipeline job={activeJobId ? job : null} />
+
+          {/* Recent completed jobs */}
+          {completedJobs.length > 0 && (
+            <div className="border border-black/10 rounded-sm p-4 bg-white/40">
+              <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-3">
+                Recent ingestions
               </div>
-            ))}
-          </div>
+              <div className="space-y-2">
+                {completedJobs.map((j) => (
+                  <div
+                    key={j.id}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        j.status === "succeeded" ? "bg-green-500" : "bg-red-500"
+                      }`}
+                    />
+                    <span className="text-muted font-mono truncate flex-1">
+                      {j.documentId.slice(0, 8)}…
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono ${
+                        j.status === "succeeded" ? "text-green-600" : "text-red-500"
+                      }`}
+                    >
+                      {j.status === "succeeded"
+                        ? `✓ ${j.totalChunks ?? "?"} chunks`
+                        : "✕ failed"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

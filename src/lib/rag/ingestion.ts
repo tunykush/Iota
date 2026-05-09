@@ -134,7 +134,18 @@ export function chunkText(text: string): string[] {
     pushCurrent(current);
   }
 
-  return chunks;
+  // ── Phase 3: Merge tiny trailing chunks with the previous chunk ──
+  const MIN_TRAILING_CHUNK = 100;
+  const merged: string[] = [];
+  for (const chunk of chunks) {
+    if (merged.length > 0 && chunk.length < MIN_TRAILING_CHUNK) {
+      merged[merged.length - 1] += `\n\n${chunk}`;
+    } else {
+      merged.push(chunk);
+    }
+  }
+
+  return merged;
 }
 
 export function chunkTextWithPageNumber(text: string, pageNumber?: number): IngestibleChunk[] {

@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { chatApi } from "@/lib/api/client";
 import type {
   ChatRequest,
@@ -88,12 +88,15 @@ export function useChat(initialConversationId?: string | null) {
     };
   }, [conversationId]);
 
+  const sendingRef = useRef(false);
+
   const sendMessage = useCallback(
     async (text: string, opts?: Partial<Omit<ChatRequest, "message" | "conversationId">>) => {
-      if (!text.trim() || sending) return;
+      if (!text.trim() || sendingRef.current) return;
 
       setError(null);
       setSending(true);
+      sendingRef.current = true;
 
       // Optimistic user message
       const optimisticId = `opt_${Date.now()}`;
@@ -152,9 +155,10 @@ export function useChat(initialConversationId?: string | null) {
         throw err;
       } finally {
         setSending(false);
+        sendingRef.current = false;
       }
     },
-    [conversationId, sending],
+    [conversationId],
   );
 
   const reset = useCallback(() => {
@@ -176,8 +180,9 @@ export function useChat(initialConversationId?: string | null) {
       setMessages([]);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete conversation");
-      throw err;
+      const msg = err instanceof Error ? err.message : "Failed to delete conversation";
+      setError(msg);
+      return false;
     } finally {
       setDeleting(false);
     }
@@ -223,7 +228,7 @@ export function useConversations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
+  const loadConversations = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -237,10 +242,10 @@ export function useConversations() {
   }, []);
 
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    loadConversations();
+  }, [loadConversations]);
 
-  return { conversations, loading, error, refetch: fetch };
+  return { conversations, loading, error, refetch: loadConversations };
 }
 
 // ─── useConversationDetail ─────────────────────────────────────

@@ -29,12 +29,13 @@ async function apiFetch<T>(
 ): Promise<T> {
   const url = `${BASE}${path}`;
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await fetch(url, {
-    headers: isFormData ? init?.headers : { "Content-Type": "application/json", ...init?.headers },
-    ...init,
+    headers: isFormData ? initHeaders : { "Content-Type": "application/json", ...initHeaders },
+    ...restInit,
   });
 
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) return undefined as unknown as T;
 
   const data = await res.json();
 
