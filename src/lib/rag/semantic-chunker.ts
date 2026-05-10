@@ -16,7 +16,7 @@
  *   SEMANTIC_SIMILARITY_THRESHOLD=0.45 (lower = more splits)
  */
 
-import type { IngestibleChunk } from "./ingestion";
+import { chunkText, type IngestibleChunk } from "./ingestion";
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -317,8 +317,6 @@ export type SemanticChunkResult = {
  */
 export function semanticChunkText(text: string): SemanticChunkResult {
   if (!isSemanticChunkingEnabled() || text.length < 500) {
-    // Import would create circular dependency, so inline a simple split
-    const { chunkText } = require("./ingestion") as { chunkText: (t: string) => string[] };
     return {
       chunks: chunkText(text),
       method: "fixed",
@@ -329,7 +327,6 @@ export function semanticChunkText(text: string): SemanticChunkResult {
 
   const sentences = splitIntoSentences(text);
   if (sentences.length < 4) {
-    const { chunkText } = require("./ingestion") as { chunkText: (t: string) => string[] };
     return {
       chunks: chunkText(text),
       method: "fixed",
