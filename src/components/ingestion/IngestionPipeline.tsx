@@ -109,25 +109,41 @@ function StepIcon({ state }: { state: "pending" | "active" | "done" | "error" })
   );
 }
 
-function MagicRotor({ className = "", reverse = false }: { className?: string; reverse?: boolean }) {
+/** Generates an SVG gear/cog path with the given parameters */
+function gearPath(cx: number, cy: number, outerR: number, innerR: number, teeth: number): string {
+  const points: string[] = [];
+  for (let i = 0; i < teeth; i++) {
+    const a1 = (i / teeth) * Math.PI * 2;
+    const a2 = ((i + 0.35) / teeth) * Math.PI * 2;
+    const a3 = ((i + 0.5) / teeth) * Math.PI * 2;
+    const a4 = ((i + 0.85) / teeth) * Math.PI * 2;
+    points.push(`${cx + Math.cos(a1) * innerR},${cy + Math.sin(a1) * innerR}`);
+    points.push(`${cx + Math.cos(a2) * outerR},${cy + Math.sin(a2) * outerR}`);
+    points.push(`${cx + Math.cos(a3) * outerR},${cy + Math.sin(a3) * outerR}`);
+    points.push(`${cx + Math.cos(a4) * innerR},${cy + Math.sin(a4) * innerR}`);
+  }
+  return `M${points.join("L")}Z`;
+}
+
+function RotatingGear({ cx, cy, outerR, innerR, teeth, reverse = false, dur = "6s", color = "#cf5b3f", opacity = 0.6 }: {
+  cx: number; cy: number; outerR: number; innerR: number; teeth: number;
+  reverse?: boolean; dur?: string; color?: string; opacity?: number;
+}) {
+  const d = gearPath(0, 0, outerR, innerR, teeth);
   return (
-    <g className={className} style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+    <g transform={`translate(${cx},${cy})`}>
       <animateTransform
         attributeName="transform"
         type="rotate"
-        from="0"
-        to={reverse ? "-360" : "360"}
-        dur={reverse ? "10s" : "12s"}
+        from={`0 ${cx} ${cy}`}
+        to={`${reverse ? -360 : 360} ${cx} ${cy}`}
+        dur={dur}
         repeatCount="indefinite"
+        additive="sum"
       />
-      <circle r="15" fill="none" stroke="#8a8170" strokeWidth="0.65" strokeDasharray="1 6" opacity="0.34" />
-      <circle r="9" fill="none" stroke="#cf5b3f" strokeWidth="0.55" strokeDasharray="6 8" opacity="0.28" />
-      {Array.from({ length: 6 }).map((_, spark) => (
-        <circle key={spark} cx="0" cy="-15" r={spark % 2 ? "0.9" : "1.2"} fill="#cf5b3f" opacity="0.42" transform={`rotate(${spark * 60})`}>
-          <animate attributeName="opacity" values="0.12;0.58;0.12" dur={`${2.8 + spark * 0.22}s`} begin={`${spark * 0.16}s`} repeatCount="indefinite" />
-        </circle>
-      ))}
-      <path d="M-7 0 C-3 -5 3 -5 7 0 C3 5 -3 5 -7 0Z" fill="none" stroke="#7d7465" strokeWidth="0.55" opacity="0.38" />
+      <path d={d} fill="none" stroke={color} strokeWidth="0.8" opacity={opacity} />
+      <circle r={innerR * 0.45} fill="none" stroke={color} strokeWidth="0.6" opacity={opacity * 0.7} />
+      <circle r="1.2" fill={color} opacity={opacity * 0.9} />
     </g>
   );
 }
@@ -135,7 +151,7 @@ function MagicRotor({ className = "", reverse = false }: { className?: string; r
 function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceeded, load, compact = false }: { activeIndex: number; activeStep: (typeof STEPS)[number]; isRunning: boolean; isFailed: boolean; isSucceeded: boolean; load: number; compact?: boolean }) {
   const visibleLines = Math.max(0, Math.min(activeIndex, BLUEPRINT_POINTS.length - 1));
   const stateLabel = isFailed ? "needs revision" : isSucceeded ? "sealed" : isRunning ? "drafting" : "standby";
-  const showFinalEngine = activeStep.key === "done" && isSucceeded;
+  const showFinalEngine = activeStep.key === "done" || isRunning;
 
   return (
     <div className={`relative overflow-hidden border border-[#6f8fa3]/25 bg-[#f7f4e9] rounded-sm p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)] ${compact ? "mb-3" : "mb-5"}`}>
@@ -154,7 +170,7 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
         </div>
       </div>
 
-      <div className={`relative overflow-hidden rounded-sm border border-[#6f8fa3]/20 bg-white/25 ${compact ? "h-[190px]" : "h-32 sm:h-36"}`}>
+      <div className={`relative overflow-hidden rounded-sm border border-[#6f8fa3]/20 bg-white/25 ${compact ? "h-[160px]" : "h-32 sm:h-36"}`}>
         <svg viewBox="0 0 410 120" className="absolute inset-0 h-full w-full" aria-hidden="true">
           <defs>
             <filter id="blueprintGlow">
@@ -201,19 +217,45 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
           <path d="M26 16 h54 m-27 -7 v14 M326 98 h58 m-29 -7 v14" stroke="#8a8170" strokeWidth="0.7" opacity="0.28" />
           {showFinalEngine && (
             <g transform="translate(210 58)">
-              <rect x="-70" y="-24" width="140" height="48" rx="2" fill="none" stroke="#8a8170" strokeWidth="0.55" strokeDasharray="8 8" opacity="0.18" />
-              <path d="M-70 0 H70 M0 -24 V24" fill="none" stroke="#8a8170" strokeWidth="0.45" strokeDasharray="4 8" opacity="0.18" />
-              <path d="M-48 -10 C-26 -24 26 -24 48 -10 M-48 10 C-24 24 24 24 48 10" fill="none" stroke="#cf5b3f" strokeWidth="0.45" strokeDasharray="2 8" opacity="0.18">
-                <animate attributeName="stroke-dashoffset" values="0;-20" dur="7s" repeatCount="indefinite" />
+              {/* Engine housing */}
+              <rect x="-75" y="-28" width="150" height="56" rx="3" fill="none" stroke="#8a8170" strokeWidth="0.55" strokeDasharray="8 8" opacity="0.22" />
+              <path d="M-75 0 H75 M0 -28 V28" fill="none" stroke="#8a8170" strokeWidth="0.4" strokeDasharray="4 8" opacity="0.14" />
+
+              {/* Animated drive belt connecting gears */}
+              <path d="M-42 -8 C-20 -22 20 -22 42 -8 M-42 8 C-20 22 20 22 42 8" fill="none" stroke="#cf5b3f" strokeWidth="0.5" strokeDasharray="3 6" opacity="0.25">
+                <animate attributeName="stroke-dashoffset" values="0;-18" dur="4s" repeatCount="indefinite" />
               </path>
-              <g transform="translate(-28 0)"><MagicRotor /></g>
-              <g transform="translate(0 0) scale(.82)"><MagicRotor reverse /></g>
-              <g transform="translate(28 0) scale(.68)"><MagicRotor /></g>
-              <circle cx="0" cy="0" r="38" fill="none" stroke="#cf5b3f" strokeWidth="0.45" strokeDasharray="1 9" opacity="0.2">
-                <animate attributeName="r" values="31;40;31" dur="5.8s" repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0.08;0.24;0.08" dur="5.8s" repeatCount="indefinite" />
+
+              {/* Large main gear — 10 teeth, slow rotation */}
+              <RotatingGear cx={-30} cy={0} outerR={18} innerR={13} teeth={10} dur="8s" color="#cf5b3f" opacity={0.55} />
+
+              {/* Medium gear — meshed, reverse rotation */}
+              <RotatingGear cx={0} cy={-2} outerR={14} innerR={10} teeth={8} reverse dur="6.2s" color="#7d7465" opacity={0.5} />
+
+              {/* Small fast gear */}
+              <RotatingGear cx={24} cy={2} outerR={10} innerR={7} teeth={6} dur="4s" color="#cf5b3f" opacity={0.5} />
+
+              {/* Tiny accent gear */}
+              <RotatingGear cx={42} cy={-4} outerR={7} innerR={5} teeth={5} reverse dur="3s" color="#4e768c" opacity={0.45} />
+
+              {/* Pulsing energy ring */}
+              <circle cx="0" cy="0" r="36" fill="none" stroke="#cf5b3f" strokeWidth="0.5" strokeDasharray="2 8" opacity="0.18">
+                <animate attributeName="r" values="30;38;30" dur="5s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.08;0.22;0.08" dur="5s" repeatCount="indefinite" />
               </circle>
-              <text x="0" y="38" textAnchor="middle" className="fill-[#7d7465] font-mono text-[4.5px] uppercase tracking-[0.2em]">arcane core</text>
+
+              {/* Spark particles around gears */}
+              {Array.from({ length: 8 }).map((_, i) => {
+                const angle = (i / 8) * Math.PI * 2;
+                const r = 28 + (i % 3) * 4;
+                return (
+                  <circle key={i} cx={Math.cos(angle) * r} cy={Math.sin(angle) * r} r="0.8" fill="#cf5b3f" opacity="0.3">
+                    <animate attributeName="opacity" values="0.1;0.5;0.1" dur={`${2 + i * 0.3}s`} begin={`${i * 0.2}s`} repeatCount="indefinite" />
+                  </circle>
+                );
+              })}
+
+              <text x="0" y="42" textAnchor="middle" className="fill-[#7d7465] font-mono text-[4.5px] uppercase tracking-[0.2em]">engine core</text>
             </g>
           )}
         </svg>
@@ -261,8 +303,8 @@ export function IngestionPipeline({ job, compact = false }: { job: IngestionJob 
   }, [activeIndex, embeddingProgress, isFailed, isSucceeded, job]);
 
   return (
-    <div className={`border border-black/10 rounded-sm bg-white/40 ${compact ? "p-4 xl:p-5" : "p-5"}`}>
-      <div className="mb-4 flex items-center justify-between">
+    <div className={`border border-black/10 rounded-sm bg-white/40 ${compact ? "p-3 xl:p-4" : "p-5"}`}>
+      <div className="mb-3 flex items-center justify-between">
         <div className="text-[9px] font-mono text-muted tracking-widest uppercase">
           Ingestion Pipeline
         </div>
@@ -281,8 +323,8 @@ export function IngestionPipeline({ job, compact = false }: { job: IngestionJob 
 
       <BlueprintCore activeIndex={activeIndex} activeStep={activeStep} isRunning={isRunning} isFailed={Boolean(isFailed)} isSucceeded={Boolean(isSucceeded)} load={load} compact={compact} />
 
-      <div className="overflow-x-auto pb-1">
-        <div className={`grid grid-cols-6 gap-2 ${compact ? "min-w-[620px]" : "min-w-[720px] sm:min-w-0"}`}>
+      <div className="overflow-x-auto">
+        <div className={`grid grid-cols-6 gap-1.5 ${compact ? "min-w-[600px]" : "min-w-[720px] sm:min-w-0"}`}>
         {STEPS.map((step, index) => {
           let state: "pending" | "active" | "done" | "error" = "pending";
           if (index < activeIndex) state = "done";
@@ -292,7 +334,7 @@ export function IngestionPipeline({ job, compact = false }: { job: IngestionJob 
           const isLast = index === STEPS.length - 1;
 
           return (
-            <div key={step.key} className={`relative min-w-0 rounded-sm border border-black/10 bg-white/25 ${compact ? "p-2" : "p-3"}`}>
+            <div key={step.key} className={`relative min-w-0 rounded-sm border border-black/10 bg-white/25 ${compact ? "p-1.5" : "p-3"}`}>
               {!isLast && (
                 <div
                   className={`absolute left-[calc(100%-0.25rem)] top-6 h-px w-3 transition-all duration-700 ${
@@ -300,7 +342,7 @@ export function IngestionPipeline({ job, compact = false }: { job: IngestionJob 
                   }`}
                 />
               )}
-              <div className="mb-2 flex items-center justify-between gap-2">
+              <div className={`${compact ? "mb-1" : "mb-2"} flex items-center justify-between gap-2`}>
                 <StepIcon state={state} />
                 <span className="text-[8px] font-mono uppercase tracking-[0.18em] text-muted">
                   {String(index + 1).padStart(2, "0")}
@@ -322,7 +364,7 @@ export function IngestionPipeline({ job, compact = false }: { job: IngestionJob 
                   {step.label}
                 </div>
                 <div
-                  className={`mt-1 line-clamp-2 text-[10px] leading-4 transition-colors duration-300 ${compact ? "min-h-[1rem] xl:min-h-[2rem]" : "min-h-[2rem]"} ${
+                  className={`mt-0.5 line-clamp-2 text-[10px] leading-4 transition-colors duration-300 ${compact ? "min-h-[1rem]" : "min-h-[2rem]"} ${
                     state === "active" || state === "done" ? "text-muted" : "text-black/20"
                   }`}
                 >

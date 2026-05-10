@@ -21,11 +21,18 @@ export type LlmGenerateResult = {
   latencyMs: number;
 };
 
+export type LlmStreamChunk = {
+  delta: string;
+  done: boolean;
+};
+
 export interface LlmProvider {
   id: LlmProviderId;
   model: string;
   isConfigured(): boolean;
   generate(request: LlmGenerateRequest): Promise<LlmGenerateResult>;
+  /** Optional streaming support — yields text deltas */
+  generateStream?(request: LlmGenerateRequest): AsyncGenerator<LlmStreamChunk, void, unknown>;
 }
 
 export type LlmRouterResult = LlmGenerateResult & {

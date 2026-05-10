@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatGenerationMode, ChatSource } from "@/lib/api/types";
-import { generateWithFallback } from "@/lib/llm/router";
-import { reflectAndImproveAnswer, retrieveAgenticContext, runCollaborativeRagAgents, runToolUseRagAgent, type AgenticRagTrace } from "./agentic-rag";
+import { generateWithFallback, streamWithFallback } from "@/lib/llm/router";
+import { chooseRuleBasedTools, reflectAndImproveAnswer, retrieveAgenticContext, runCollaborativeRagAgents, runRagTool, runToolUseRagAgent, type AgenticRagTrace, type RagToolName } from "./agentic-rag";
 import { orchestrateContext, type ContextOrchestratorDiagnostics } from "./context-orchestrator";
 import { buildRagMessages, buildToolAugmentedRagMessages } from "./prompts";
 import { retrieveRelevantChunks, type RetrievedChunk } from "./retrieval";
@@ -510,11 +510,24 @@ export async function runHybridRagChat(input: {
 
   try {
     const toolUseEnabled = agenticEnabled && envFlagEnabled("RAG_TOOL_USE_ENABLED", true);
-    const collaborativeEnabled = agenticEnabled && envFlagEnabled("RAG_COLLABORATIVE_ENABLED", true);
-    const reflectionEnabled = agenticEnabled && envFlagEnabled("RAG_REFLECTION_ENABLED", true);
+    // Collaborative is OFF by default for speed — enable with RAG_COLLABORATIVE_ENABLED=true
+    const collaborativeEnabled = agenticEnabled && envFlagEnabled("RAG_COLLABORATIVE_ENABLED", false);
+    // Reflection is OFF by default for speed — enable with RAG_REFLECTION_ENABLED=true
+    const reflectionEnabled = agenticEnabled && envFlagEnabled("RAG_REFLECTION_ENABLED", false);
+
+    // Use fast rule-based tool selection (no LLM call) unless RAG_TOOL_USE_LLM=true
+    const toolUseLlm = envFlagEnabled("RAG_TOOL_USE_LLM", false);
     const toolUse = toolUseEnabled
-      ? await runToolUseRagAgent({ question: input.message, chunks })
-      : { selectedTools: [], results: [] };
+      ? (toolUseLlm
+        ? await runToolUseRagAgent({ question: input.message, chunks })
+        : (() => {
+          const selectedTools = chooseRuleBasedTools(input.message);
+          return {
+            selectedTools,
+            results: selectedTools.map((tool: RagToolName) => runRagTool(tool, input.message, chunks)),
+          };
+        })())
+      : { selectedTools: [] as RagToolName[], results: [] as ReturnType<typeof runRagTool>[] };
     if (diagnostics.agentic) diagnostics.agentic.toolUse = toolUse;
     const toolResults = toolUse.results.map((result) => `Tool: ${result.tool}\n${result.summary}`).join("\n\n");
     const llmResult = await generateWithFallback({
@@ -557,7 +570,7 @@ export async function runHybridRagChat(input: {
         attempts: llmResult.attempts,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     if (chatMode === "llm") {
       throw error;
     }
@@ -581,4 +594,84 @@ export async function runHybridRagChat(input: {
       },
     };
   }
+}
+
+/**
+ * Streaming RAG chat — retrieves context then streams LLM tokens via SSE.
+ * Yields SSE-formatted events: sources, delta tokens, done.
+ */
+export async function* streamHybridRagChat(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  message: string;
+  topK?: number;
+  documentIds?: string[];
+}): AsyncGenerator<string, void, unknown> {
+  // 1. Retrieve context (non-streaming, fast)
+  const agenticEnabled = shouldUseAgenticRag();
+  const retrievalResult = agenticEnabled
+    ? await retrieveAgenticContext({
+      supabase: input.supabase,
+      userId: input.userId,
+      question: input.message,
+      topK: input.topK,
+      documentIds: input.documentIds,
+    })
+    : {
+      chunks: await retrieveRelevantChunks({
+        supabase: input.supabase,
+        userId: input.userId,
+        query: input.message,
+        topK: input.topK,
+        documentIds: input.documentIds,
+      }),
+      trace: undefined,
+    };
+
+  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
+  const chunks = contextOrchestrator.chunks;
+  const sources = chunks.map(({ text: _text, ...source }) => source);
+
+  // 2. Emit sources immediately so frontend can show them
+  yield `data: ${JSON.stringify({ type: "sources", sources })}\n\n`;
+
+  // 3. Build tool results (fast, rule-based)
+  const toolUseEnabled = agenticEnabled && envFlagEnabled("RAG_TOOL_USE_ENABLED", true);
+  const toolUse = toolUseEnabled
+    ? (() => {
+      const selectedTools = chooseRuleBasedTools(input.message);
+      return {
+        selectedTools,
+        results: selectedTools.map((tool: RagToolName) => runRagTool(tool, input.message, chunks)),
+      };
+    })()
+    : { selectedTools: [] as RagToolName[], results: [] as ReturnType<typeof runRagTool>[] };
+
+  const toolResults = toolUse.results.map((r) => `Tool: ${r.tool}\n${r.summary}`).join("\n\n");
+  const messages = toolResults
+    ? buildToolAugmentedRagMessages(input.message, chunks, toolResults)
+    : buildRagMessages(input.message, chunks);
+
+  // 4. Stream LLM tokens
+  let fullContent = "";
+  try {
+    for await (const chunk of streamWithFallback({ messages, temperature: 0.2, maxTokens: 2000 })) {
+      if (chunk.delta) {
+        fullContent += chunk.delta;
+        yield `data: ${JSON.stringify({ type: "delta", delta: chunk.delta })}\n\n`;
+      }
+      if (chunk.done) {
+        yield `data: ${JSON.stringify({ type: "done", provider: chunk.provider, model: chunk.model })}\n\n`;
+      }
+    }
+  } catch {
+    // Fallback to extractive if streaming fails
+    const extractive = buildExtractiveAnswer(input.message, chunks);
+    yield `data: ${JSON.stringify({ type: "delta", delta: extractive })}\n\n`;
+    yield `data: ${JSON.stringify({ type: "done", provider: "extractive", model: "local-fallback" })}\n\n`;
+    fullContent = extractive;
+  }
+
+  // 5. Emit final content for persistence
+  yield `data: ${JSON.stringify({ type: "complete", content: fullContent })}\n\n`;
 }

@@ -1,4 +1,4 @@
-import type { LlmGenerateRequest, LlmProvider, LlmRouterResult } from "./types";
+import type { LlmGenerateRequest, LlmProvider, LlmRouterResult, LlmStreamChunk } from "./types";
 import { createDeepSeekProvider } from "./providers/deepseek";
 import { createGeminiProvider } from "./providers/gemini";
 import { createGroqProvider } from "./providers/groq";
@@ -68,4 +68,42 @@ export async function generateWithFallback(
   }
 
   throw new Error(`No LLM provider succeeded. Attempts: ${attempts.map((a) => `${a.model}: ${a.error}`).join(" | ")}`);
+}
+
+/**
+ * Stream generation with fallback — tries providers until one streams successfully.
+ * Yields text deltas. Falls back to non-streaming generate() if provider lacks streaming.
+ */
+export async function* streamWithFallback(
+  request: Omit<LlmGenerateRequest, "signal">,
+  providers = defaultProviders(),
+): AsyncGenerator<LlmStreamChunk & { provider: string; model: string }, void, unknown> {
+  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+
+  for (const provider of providers) {
+    if (!provider.isConfigured()) continue;
+
+    const timeout = withTimeout(timeoutMs);
+    try {
+      if (provider.generateStream) {
+        const stream = provider.generateStream({ ...request, signal: timeout.controller.signal });
+        for await (const chunk of stream) {
+          yield { ...chunk, provider: provider.id, model: provider.model };
+          if (chunk.done) { timeout.clear(); return; }
+        }
+        timeout.clear();
+        return;
+      }
+      // Fallback: non-streaming generate, emit as single chunk
+      const result = await provider.generate({ ...request, signal: timeout.controller.signal });
+      timeout.clear();
+      yield { delta: result.content, done: true, provider: provider.id, model: provider.model };
+      return;
+    } catch {
+      timeout.clear();
+      // Try next provider
+    }
+  }
+
+  throw new Error("No LLM provider succeeded for streaming");
 }

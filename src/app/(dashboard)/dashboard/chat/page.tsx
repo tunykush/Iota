@@ -215,6 +215,7 @@ function ChatWorkspace() {
   const searchParams = useSearchParams();
   const selectedConversationId = searchParams.get("conversationId");
   const {
+    conversationId,
     messages: rawMessages,
     loadingHistory,
     sending,
@@ -263,16 +264,17 @@ function ChatWorkspace() {
     sendMessage(text, {
       mode: generationMode,
       documentIds: selectedDocumentId ? [selectedDocumentId] : undefined,
-    })
-      .then((response) => {
-        if (!selectedConversationId && response?.conversationId) {
-          router.replace(`/dashboard/chat?conversationId=${response.conversationId}`);
-        }
-      })
-      .catch(() => {
-        // error is already set in hook state
-      });
+    }).catch(() => {
+      // error is already set in hook state
+    });
   };
+
+  // When a new conversation is created via streaming, update the URL
+  useEffect(() => {
+    if (conversationId && !selectedConversationId) {
+      router.replace(`/dashboard/chat?conversationId=${conversationId}`);
+    }
+  }, [conversationId, selectedConversationId, router]);
 
   const handleRetry = () => {
     reset();

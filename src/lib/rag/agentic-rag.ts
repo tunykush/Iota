@@ -74,7 +74,7 @@ function shortText(text: string, limit = 260) {
   return normalized.length > limit ? `${normalized.slice(0, limit - 3)}...` : normalized;
 }
 
-function chooseRuleBasedTools(question: string): RagToolName[] {
+export function chooseRuleBasedTools(question: string): RagToolName[] {
   const q = question.toLowerCase();
   const tools: RagToolName[] = ["search_documents"];
   if (/summari[sz]e|summary|overview|tóm\s*tắt|tổng\s*quan/iu.test(q)) tools.push("summarize_document");
@@ -107,7 +107,7 @@ async function chooseToolsWithAgent(question: string): Promise<RagToolName[]> {
   }
 }
 
-function runRagTool(tool: RagToolName, question: string, chunks: RetrievedChunk[]): ToolUseTrace["results"][number] {
+export function runRagTool(tool: RagToolName, question: string, chunks: RetrievedChunk[]): ToolUseTrace["results"][number] {
   if (tool === "summarize_document") {
     const grouped = new Map<string, RetrievedChunk[]>();
     chunks.forEach((chunk) => grouped.set(chunk.documentId, [...(grouped.get(chunk.documentId) ?? []), chunk]));
@@ -183,19 +183,26 @@ export async function retrieveAgenticContext(input: {
   const queryRewriteEnabled = envFlagEnabled("RAG_QUERY_REWRITE_ENABLED", true);
   const rewrite = queryRewriteEnabled ? await rewriteQueryForRetrieval(input.question) : { rewrittenQuery: input.question, subQueries: [] };
   const retrievalQueries = uniqueStrings([input.question, rewrite.rewrittenQuery, ...rewrite.subQueries]).slice(0, MAX_RETRIEVAL_QUERIES);
+
+  // Run all retrieval queries in parallel instead of sequentially
+  const retrievalResults = await Promise.all(
+    retrievalQueries.map(async (query) => {
+      const chunks = await retrieveRelevantChunks({
+        supabase: input.supabase,
+        userId: input.userId,
+        query,
+        topK: Math.max(requestedTopK, 5),
+        documentIds: input.documentIds,
+      });
+      return { query, chunks };
+    }),
+  );
+
   const allChunks: RetrievedChunk[] = [];
   const hops: AgenticRagTrace["hops"] = [];
-
-  for (const query of retrievalQueries) {
-    const chunks = await retrieveRelevantChunks({
-      supabase: input.supabase,
-      userId: input.userId,
-      query,
-      topK: Math.max(requestedTopK, 5),
-      documentIds: input.documentIds,
-    });
-    allChunks.push(...chunks);
-    hops.push({ query, returnedChunks: chunks.length });
+  for (const result of retrievalResults) {
+    allChunks.push(...result.chunks);
+    hops.push({ query: result.query, returnedChunks: result.chunks.length });
   }
 
   return {

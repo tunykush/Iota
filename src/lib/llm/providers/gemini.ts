@@ -1,4 +1,4 @@
-import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../types";
+import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider, LlmStreamChunk } from "../types";
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite";
 const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -60,6 +60,52 @@ export function createGeminiProvider(model?: string): LlmProvider {
       }
 
       return { content: content.trim(), provider: "gemini", model: resolvedModel, latencyMs: Date.now() - started };
+    },
+    async *generateStream(request: LlmGenerateRequest): AsyncGenerator<LlmStreamChunk, void, unknown> {
+      const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      const url = `${baseUrl}/models/${resolvedModel}:streamGenerateContent?alt=sse`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey ?? "" },
+        body: JSON.stringify({
+          contents: toGeminiContents(request.messages),
+          generationConfig: {
+            temperature: request.temperature ?? 0.2,
+            maxOutputTokens: request.maxTokens ?? defaultTokens,
+          },
+        }),
+        signal: request.signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Gemini stream failed (${res.status}): ${text.slice(0, 240)}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("Gemini stream: no body reader");
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const payload = trimmed.slice(6);
+          if (payload === "[DONE]") { yield { delta: "", done: true }; return; }
+          try {
+            const parsed = JSON.parse(payload);
+            const delta = parsed?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+            if (delta) yield { delta, done: false };
+          } catch { /* skip malformed */ }
+        }
+      }
+      yield { delta: "", done: true };
     },
   };
 }

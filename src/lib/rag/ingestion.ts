@@ -152,6 +152,9 @@ export function chunkTextWithPageNumber(text: string, pageNumber?: number): Inge
   return chunkText(text).map((chunk) => ({ text: chunk, pageNumber }));
 }
 
+// Re-export semantic chunker for use in ingestion pipelines
+export { semanticChunkText, semanticChunkTextWithPageNumber } from "./semantic-chunker";
+
 export function getEmptyTextIngestionMessage(sourceType: DocumentSourceType): string {
   if (sourceType === "website") {
     return "No extractable text found for this web page. The URL may be missing, blocked, rendered mostly with JavaScript, or contain non-text content.";

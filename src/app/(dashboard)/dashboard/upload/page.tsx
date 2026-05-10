@@ -6,7 +6,7 @@ import { IngestionPipeline } from "@/components/ingestion/IngestionPipeline";
 import type { IngestionJob } from "@/lib/api/types";
 
 // ─── Upload PDF panel ──────────────────────────────────────────
-function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void }) {
+function UploadPdfPanel({ onJobStart, onUploadBegin }: { onJobStart: (jobId: string) => void; onUploadBegin: () => void }) {
   const { upload, uploading, progress, result, error, reset } = useUploadPdf();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -38,6 +38,8 @@ function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void })
 
   const handleUpload = async () => {
     if (!selectedFile) return;
+    // Start pipeline animation immediately — don't wait for upload to finish
+    onUploadBegin();
     try {
       const data = await upload(selectedFile);
       onJobStart(data.job.id);
@@ -56,22 +58,22 @@ function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void })
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onClick={() => fileInputRef.current?.click()}
-        className={`flex min-h-[132px] cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed p-5 text-center transition-colors xl:min-h-[150px] ${
+        className={`flex min-h-[80px] cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed p-3 text-center transition-colors ${
           dragOver ? "border-accent bg-accent/5" : "border-black/20 hover:border-accent/40"
         }`}
       >
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 font-serif text-lg italic text-accent">
+        <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full border border-black/10 font-serif text-base italic text-accent">
           ι
         </div>
         {selectedFile ? (
           <>
-            <p className="text-sm font-medium mb-1 truncate max-w-xs">{selectedFile.name}</p>
-            <p className="text-xs text-muted">{(selectedFile.size / 1024).toFixed(0)} KB · Click to change</p>
+            <p className="text-xs font-medium mb-0.5 truncate max-w-xs">{selectedFile.name}</p>
+            <p className="text-[10px] text-muted">{(selectedFile.size / 1024).toFixed(0)} KB · Click to change</p>
           </>
         ) : (
           <>
-            <p className="text-sm font-medium mb-1">Drop PDF here or click to browse</p>
-            <p className="text-xs text-muted">Max 10 MB · PDF only</p>
+            <p className="text-xs font-medium mb-0.5">Drop PDF here or click to browse</p>
+            <p className="text-[10px] text-muted">Max 10 MB · PDF only</p>
           </>
         )}
         <input
@@ -85,7 +87,7 @@ function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void })
 
       {/* Progress bar */}
       {uploading && (
-        <div className="mt-3">
+        <div className="mt-2">
           <div className="flex justify-between text-[10px] font-mono text-muted mb-1">
             <span>Uploading…</span>
             <span>{progress}%</span>
@@ -100,19 +102,19 @@ function UploadPdfPanel({ onJobStart }: { onJobStart: (jobId: string) => void })
       )}
 
       {result && (
-        <div className="mt-3 rounded-sm border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-          ✓ <span className="font-medium">{result.document.title}</span> uploaded — ingestion started.
+        <div className="mt-2 rounded-sm border border-green-200 bg-green-50 p-2 text-xs text-green-700">
+          ✓ <span className="font-medium">{result.document.title}</span> uploaded.
         </div>
       )}
 
       {error && (
-        <div className="mt-3 rounded-sm border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-2 rounded-sm border border-red-200 bg-red-50 p-2 text-xs text-red-700">
           {error}
         </div>
       )}
 
       {/* Actions */}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-2 flex gap-2">
         <button
           type="button"
           onClick={handleUpload}
@@ -209,6 +211,8 @@ export default function UploadPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const { job } = useJobPolling(activeJobId, 1500);
   const [demoJob, setDemoJob] = useState<IngestionJob | null>(null);
+  // Optimistic job shown immediately when user clicks Upload (before API responds)
+  const [optimisticJob, setOptimisticJob] = useState<IngestionJob | null>(null);
 
   // Track completed jobs for history display
   const [completedJobs, setCompletedJobs] = useState<IngestionJob[]>([]);
@@ -232,7 +236,55 @@ export default function UploadPage() {
     }
   }, [job]);
 
+  // Once real polled job arrives, clear the optimistic placeholder
+  useEffect(() => {
+    if (job && optimisticJob) {
+      setOptimisticJob(null);
+    }
+  }, [job, optimisticJob]);
+
+  // Called immediately when user clicks "Upload PDF" — before the API call finishes
+  const handleUploadBegin = useCallback(() => {
+    const startedAt = new Date().toISOString();
+    setDemoJob(null);
+    setActiveJobId(null);
+    prevStatusRef.current = null;
+    setOptimisticJob({
+      id: `optimistic-${Date.now()}`,
+      documentId: "uploading",
+      status: "queued",
+      createdAt: startedAt,
+      startedAt,
+      totalChunks: 0,
+      embeddedChunks: 0,
+    });
+  }, []);
+
+  // Progress the optimistic job through early stages while waiting for real data
+  useEffect(() => {
+    if (!optimisticJob) return;
+
+    const stages: Array<Partial<IngestionJob>> = [
+      { status: "queued", stage: undefined },
+      { status: "running", stage: "extracting" },
+      { status: "running", stage: "chunking" },
+    ];
+
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      if (index >= stages.length) {
+        window.clearInterval(timer);
+        return;
+      }
+      setOptimisticJob((prev) => prev ? { ...prev, ...stages[index] } : null);
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [optimisticJob?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleJobStart = (jobId: string) => {
+    // Real job ID received — switch to polling; optimistic job will be cleared by the effect above
     setDemoJob(null);
     prevStatusRef.current = null;
     setActiveJobId(jobId);
@@ -241,6 +293,7 @@ export default function UploadPage() {
   const handleDemoPipeline = () => {
     const startedAt = new Date().toISOString();
     setActiveJobId(null);
+    setOptimisticJob(null);
     setDemoJob({
       id: `demo-${Date.now()}`,
       documentId: "demo-blueprint-source",
@@ -278,72 +331,77 @@ export default function UploadPage() {
     return () => window.clearInterval(timer);
   }, [demoJob?.id]);
 
-  const pipelineJob = demoJob ?? (activeJobId ? job : null);
+  const pipelineJob = optimisticJob ?? demoJob ?? (activeJobId ? job : null);
 
   return (
-    <div className="mx-auto flex h-full max-w-7xl flex-col overflow-hidden p-4 lg:p-6 xl:p-7">
-      <div className="mb-2 flex items-center gap-2">
+    <div className="mx-auto flex h-full max-w-7xl flex-col overflow-hidden p-3 lg:p-4 xl:p-5">
+      <div className="mb-1 flex items-center gap-2">
         <span className="w-4 h-px bg-accent" />
         <span className="section-label text-[10px]">Upload</span>
         <span className="text-muted text-[10px] font-mono">? N? 04</span>
       </div>
-      <h1 className="text-2xl font-display font-medium tracking-tight mb-1">
+      <h1 className="text-xl font-display font-medium tracking-tight mb-0.5">
         Add knowledge<span className="text-accent">.</span>
       </h1>
-      <p className="mb-4 text-sm text-muted">
+      <p className="mb-2 text-xs text-muted">
         Queue files, websites, and structured sources for ingestion.
       </p>
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(320px,0.72fr)_minmax(620px,1.28fr)]">
-        <div className="grid min-h-0 gap-4 lg:grid-cols-2 xl:grid-cols-1 xl:content-start">
-          <UploadPdfPanel onJobStart={handleJobStart} />
-          <CrawlUrlPanel onJobStart={handleJobStart} />
-
-          <div className="flex flex-col gap-3 border border-black/10 bg-white/30 p-4 sm:flex-row sm:items-center sm:justify-between xl:flex-col xl:items-start">
-          <div>
-            <div className="text-[9px] font-mono uppercase tracking-widest text-muted">Pipeline simulator</div>
-            <p className="mt-1 text-xs text-muted">Preview the ingestion animation without uploading a file.</p>
+      <div className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(280px,0.65fr)_minmax(520px,1.35fr)]">
+        {/* Left column: upload panels + simulator */}
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-1">
+            <UploadPdfPanel onJobStart={handleJobStart} onUploadBegin={handleUploadBegin} />
+            <CrawlUrlPanel onJobStart={handleJobStart} />
           </div>
-          <button type="button" onClick={handleDemoPipeline} className="dash-btn-primary self-start sm:self-auto">
-            Simulate pipeline
-          </button>
-        </div>
+
+          <div className="flex items-center justify-between gap-3 border border-black/10 bg-white/30 p-3 rounded-sm">
+            <div>
+              <div className="text-[9px] font-mono uppercase tracking-widest text-muted">Pipeline simulator</div>
+              <p className="mt-0.5 text-[10px] text-muted">Preview the ingestion animation.</p>
+            </div>
+            <button type="button" onClick={handleDemoPipeline} className="dash-btn-primary shrink-0">
+              Simulate
+            </button>
+          </div>
+
+          {/* Recent ingestions — inline in left column */}
+          {completedJobs.length > 0 && (
+            <div className="border border-black/10 rounded-sm p-3 bg-white/40">
+              <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-2">
+                Recent ingestions
+              </div>
+              <div className="space-y-1">
+                {completedJobs.map((j) => (
+                  <div key={j.id} className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        j.status === "succeeded" ? "bg-green-500" : "bg-red-500"
+                      }`}
+                    />
+                    <span className="text-muted font-mono truncate flex-1">
+                      {j.documentId.slice(0, 8)}…
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono ${
+                        j.status === "succeeded" ? "text-green-600" : "text-red-500"
+                      }`}
+                    >
+                      {j.status === "succeeded"
+                        ? `✓ ${j.totalChunks ?? "?"} chunks`
+                        : "✕ failed"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="min-h-0">
+        {/* Right column: pipeline visualization */}
+        <div className="min-h-0 overflow-y-auto">
           <IngestionPipeline job={pipelineJob} compact />
         </div>
-
-        {completedJobs.length > 0 && (
-          <div className="border border-black/10 rounded-sm p-4 bg-white/40">
-            <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-3">
-              Recent ingestions
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {completedJobs.map((j) => (
-                <div key={j.id} className="flex items-center gap-2 text-xs">
-                  <span
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      j.status === "succeeded" ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  />
-                  <span className="text-muted font-mono truncate flex-1">
-                    {j.documentId.slice(0, 8)}?
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono ${
-                      j.status === "succeeded" ? "text-green-600" : "text-red-500"
-                    }`}
-                  >
-                    {j.status === "succeeded"
-                      ? `? ${j.totalChunks ?? "?"} chunks`
-                      : "? failed"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

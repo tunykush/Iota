@@ -120,33 +120,98 @@ export function useChat(initialConversationId?: string | null) {
       setMessages((prev) => [...prev, userMsg, streamingMsg]);
 
       try {
-        const response = await chatApi.send({
-          message: text.trim(),
-          conversationId,
-          ...opts,
+        // Use SSE streaming endpoint for real-time token delivery
+        const res = await fetch("/api/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: text.trim(),
+            conversationId,
+            ...opts,
+          }),
         });
 
-        // Replace streaming placeholder with real response
-        setMessages((prev) =>
-          prev
-            .filter((m) => m.id !== streamingId)
-            .concat({
-              id: response.message.id,
-              role: "assistant",
-              content: response.message.content,
-              createdAt: response.message.createdAt,
-              sources: response.sources,
-              provider: response.message.provider,
-              model: response.message.model,
-              diagnostics: response.message.diagnostics ?? response.diagnostics,
-            }),
-        );
-
-        if (!conversationId) {
-          setConversationId(response.conversationId);
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({ error: { message: "Stream request failed" } }));
+          throw new Error(errBody?.error?.message ?? `HTTP ${res.status}`);
         }
 
-        return response;
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamedContent = "";
+        let streamSources: ChatSource[] | undefined;
+        let streamProvider = "";
+        let streamModel = "";
+        let persistedId: string | undefined;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data: ")) continue;
+            try {
+              const parsed = JSON.parse(trimmed.slice(6));
+              switch (parsed.type) {
+                case "init":
+                  if (!conversationId && parsed.conversationId) {
+                    setConversationId(parsed.conversationId);
+                  }
+                  break;
+                case "sources":
+                  streamSources = parsed.sources;
+                  break;
+                case "delta":
+                  streamedContent += parsed.delta;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === streamingId
+                        ? { ...m, content: streamedContent, sources: streamSources }
+                        : m,
+                    ),
+                  );
+                  break;
+                case "done":
+                  streamProvider = parsed.provider;
+                  streamModel = parsed.model;
+                  break;
+                case "persisted":
+                  persistedId = parsed.messageId;
+                  break;
+                case "error":
+                  throw new Error(parsed.error);
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message !== "Stream failed") throw e;
+            }
+          }
+        }
+
+        // Finalize: replace streaming placeholder with completed message
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamingId
+              ? {
+                  ...m,
+                  id: persistedId ?? streamingId,
+                  content: streamedContent,
+                  isStreaming: false,
+                  sources: streamSources,
+                  provider: streamProvider,
+                  model: streamModel,
+                }
+              : m,
+          ),
+        );
+
+        return undefined;
       } catch (err) {
         // Remove streaming placeholder on error
         setMessages((prev) => prev.filter((m) => m.id !== streamingId));

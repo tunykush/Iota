@@ -1,8 +1,11 @@
 import { createLocalEmbeddingProvider } from "./local";
 import { createOpenAiCompatibleEmbeddingProvider } from "./openai-compatible";
+import { getEmbeddingCache } from "./cache";
 import type { EmbeddingProvider } from "./types";
 
 export type { EmbeddingProvider, EmbeddingProviderId, EmbeddingRequest, EmbeddingResult } from "./types";
+export { getEmbeddingCache, resetEmbeddingCache } from "./cache";
+export type { EmbeddingCacheStats } from "./cache";
 
 export function getEmbeddingDimensions(): number {
   return Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
@@ -52,8 +55,52 @@ export async function embedTexts(texts: string[]): Promise<{
   model: string;
   dimensions: number;
   version: string;
+  cacheHits: number;
 }> {
   const provider = getCachedProvider();
-  const result = await provider.embed({ input: texts });
-  return { ...result, version: `${result.provider}:${result.model}:${result.dimensions}` };
+  const cache = getEmbeddingCache();
+
+  // Check cache for each text
+  const { results: cachedResults, missIndices } = cache.getBatch(texts);
+
+  // If all are cached, return immediately
+  if (missIndices.length === 0) {
+    return {
+      embeddings: cachedResults as number[][],
+      provider: provider.id,
+      model: provider.model,
+      dimensions: provider.dimensions,
+      version: `${provider.id}:${provider.model}:${provider.dimensions}`,
+      cacheHits: texts.length,
+    };
+  }
+
+  // Embed only the uncached texts
+  const uncachedTexts = missIndices.map((i) => texts[i]);
+  const result = await provider.embed({ input: uncachedTexts });
+
+  // Store new embeddings in cache
+  cache.setBatch(uncachedTexts, result.embeddings);
+
+  // Merge cached and fresh embeddings in original order
+  const finalEmbeddings: number[][] = [];
+  let freshIndex = 0;
+  for (let i = 0; i < texts.length; i++) {
+    const cached = cachedResults[i];
+    if (cached) {
+      finalEmbeddings.push(cached);
+    } else {
+      finalEmbeddings.push(result.embeddings[freshIndex]);
+      freshIndex++;
+    }
+  }
+
+  return {
+    embeddings: finalEmbeddings,
+    provider: result.provider,
+    model: result.model,
+    dimensions: result.dimensions,
+    version: `${result.provider}:${result.model}:${result.dimensions}`,
+    cacheHits: texts.length - missIndices.length,
+  };
 }
