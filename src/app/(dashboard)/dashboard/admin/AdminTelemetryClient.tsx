@@ -19,6 +19,10 @@ function stringifyMeta(value?: Record<string, unknown>) {
   return JSON.stringify(value).slice(0, 180);
 }
 
+function WrapText({ children }: { children: React.ReactNode }) {
+  return <span className="min-w-0 break-words [overflow-wrap:anywhere]">{children}</span>;
+}
+
 function BlueprintLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted">{children}</div>;
 }
@@ -110,8 +114,8 @@ export default function AdminTelemetryClient() {
   ];
 
   return (
-    <div className="min-h-full bg-[linear-gradient(to_right,rgba(0,0,0,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.045)_1px,transparent_1px)] bg-[size:48px_48px]">
-      <div className="p-4 lg:p-8 space-y-8">
+    <div className="min-h-full max-w-full overflow-x-hidden bg-[linear-gradient(to_right,rgba(0,0,0,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.045)_1px,transparent_1px)] bg-[size:48px_48px]">
+      <div className="max-w-full space-y-8 overflow-x-hidden p-4 lg:p-8">
         <section className="relative border-y border-black/15 py-8">
           <div className="absolute left-0 top-0 h-5 border-l border-black/30" />
           <div className="absolute right-0 bottom-0 h-5 border-r border-black/30" />
@@ -174,32 +178,32 @@ export default function AdminTelemetryClient() {
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="border border-black/15 bg-background/80">
-            <div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Documents / storage / metadata</h2></div>
+        <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <div className="min-w-0 overflow-hidden border border-black/15 bg-background/80">
+            <div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl leading-tight">Documents / storage / metadata</h2></div>
             {scoped.recentDocuments.length === 0 ? <EmptyLine label="No document traces yet." /> : scoped.recentDocuments.map((document) => (
-              <div key={document.id} className="border-b border-black/10 px-4 py-4 text-sm last:border-b-0">
-                <div className="flex items-start justify-between gap-4"><div><div className="font-medium">{document.title}</div><div className="mt-1 font-mono text-[11px] text-muted">{document.sourceType} / {document.chunkCount} chunks / {shortId(document.userId)}</div></div><div className="font-mono text-[11px] uppercase tracking-wider text-muted">{document.status}</div></div>
-                <div className="mt-3 grid gap-2 font-mono text-[11px] text-muted md:grid-cols-2"><span>file: {document.originalFilename || document.url || "--"}</span><span>storage: {document.storageBucket || "--"}/{document.storagePath || "--"}</span><span>hash: {shortId(document.contentHash)}</span><span>updated: {formatDate(document.updatedAt)}</span></div>
-                {(document.errorMessage || document.metadata) && <div className="mt-3 border-l border-black/15 pl-3 font-mono text-[11px] text-muted">{document.errorMessage || stringifyMeta(document.metadata)}</div>}
+              <div key={document.id} className="min-w-0 border-b border-black/10 px-4 py-4 text-sm last:border-b-0">
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"><div className="min-w-0"><div className="break-words font-medium [overflow-wrap:anywhere]">{document.title}</div><div className="mt-1 break-words font-mono text-[11px] text-muted [overflow-wrap:anywhere]">{document.sourceType} / {document.chunkCount} chunks / {shortId(document.userId)}</div></div><div className="font-mono text-[11px] uppercase tracking-wider text-muted">{document.status}</div></div>
+                <div className="mt-3 grid min-w-0 gap-2 font-mono text-[11px] text-muted md:grid-cols-2"><WrapText>file: {document.originalFilename || document.url || "--"}</WrapText><WrapText>storage: {document.storageBucket || "--"}/{document.storagePath || "--"}</WrapText><WrapText>hash: {shortId(document.contentHash)}</WrapText><WrapText>updated: {formatDate(document.updatedAt)}</WrapText></div>
+                {(document.errorMessage || document.metadata) && <div className="mt-3 min-w-0 break-words border-l border-black/15 pl-3 font-mono text-[11px] text-muted [overflow-wrap:anywhere]">{document.errorMessage || stringifyMeta(document.metadata)}</div>}
               </div>
             ))}
           </div>
 
-          <div className="border border-black/15 bg-background/80">
+          <div className="min-w-0 overflow-hidden border border-black/15 bg-background/80">
             <div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">System timeline</h2></div>
             {scoped.timeline.length === 0 ? <EmptyLine label="No timeline events yet." /> : scoped.timeline.map((event, index) => (
-              <div key={`${event.type}-${event.createdAt}-${index}`} className="grid grid-cols-[90px_1fr_auto] gap-3 border-b border-black/10 px-4 py-3 text-sm last:border-b-0">
-                <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{event.type}</div><div className="line-clamp-1 text-foreground/80">{event.title}</div><div className="font-mono text-[10px] uppercase tracking-wider text-muted">{event.status}</div>
+              <div key={`${event.type}-${event.createdAt}-${index}`} className="grid min-w-0 gap-1 border-b border-black/10 px-4 py-3 text-sm last:border-b-0 sm:grid-cols-[90px_minmax(0,1fr)_auto] sm:gap-3">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{event.type}</div><div className="min-w-0 break-words text-foreground/80 [overflow-wrap:anywhere] sm:line-clamp-1">{event.title}</div><div className="font-mono text-[10px] uppercase tracking-wider text-muted">{event.status}</div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-3">
-          <div className="border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Ingestion jobs</h2></div>{scoped.recentJobs.length === 0 ? <EmptyLine label="No jobs yet." /> : scoped.recentJobs.map((job) => <div key={job.id} className="border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="flex justify-between gap-4"><span className="font-medium">{job.jobType} / {job.stage || "queued"}</span><span className="font-mono text-[11px] uppercase tracking-wider text-muted">{job.status}</span></div><div className="mt-2 font-mono text-[11px] text-muted">doc {shortId(job.documentId)} / {formatDate(job.createdAt)}</div>{(job.errorMessage || job.metadata) && <div className="mt-2 line-clamp-2 text-xs text-muted">{job.errorMessage || stringifyMeta(job.metadata)}</div>}</div>)}</div>
-          <div className="border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Chunk samples</h2></div>{scoped.sampledChunks.length === 0 ? <EmptyLine label="No chunks sampled yet." /> : scoped.sampledChunks.map((chunk) => <div key={chunk.id} className="border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="flex justify-between gap-4"><span className="font-medium">#{chunk.chunkIndex} / {chunk.sourceType}</span><span className="font-mono text-[11px] text-muted">{chunk.tokenCount ?? 0} tok</span></div><div className="mt-2 font-mono text-[11px] text-muted">doc {shortId(chunk.documentId)} / page {chunk.pageNumber ?? "--"}</div><div className="mt-2 line-clamp-1 text-xs text-muted">{chunk.url || stringifyMeta(chunk.metadata)}</div></div>)}</div>
-          <div className="border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Citations / sources</h2></div>{scoped.recentSources.length === 0 ? <EmptyLine label="No citations yet." /> : scoped.recentSources.map((source) => <div key={source.id} className="border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="flex justify-between gap-4"><span className="font-mono text-[11px] text-muted">score {source.score?.toFixed(3) ?? "--"}</span><span className="font-mono text-[11px] text-muted">{formatDate(source.createdAt)}</span></div><p className="mt-2 line-clamp-3 text-foreground/75">{source.snippet || stringifyMeta(source.metadata)}</p><div className="mt-2 font-mono text-[11px] text-muted">chunk {shortId(source.chunkId)} / msg {shortId(source.messageId)}</div></div>)}</div>
+        <section className="grid min-w-0 gap-6 xl:grid-cols-3">
+          <div className="min-w-0 overflow-hidden border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Ingestion jobs</h2></div>{scoped.recentJobs.length === 0 ? <EmptyLine label="No jobs yet." /> : scoped.recentJobs.map((job) => <div key={job.id} className="min-w-0 border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto]"><span className="break-words font-medium [overflow-wrap:anywhere]">{job.jobType} / {job.stage || "queued"}</span><span className="font-mono text-[11px] uppercase tracking-wider text-muted">{job.status}</span></div><div className="mt-2 break-words font-mono text-[11px] text-muted [overflow-wrap:anywhere]">doc {shortId(job.documentId)} / {formatDate(job.createdAt)}</div>{(job.errorMessage || job.metadata) && <div className="mt-2 break-words text-xs text-muted [overflow-wrap:anywhere] sm:line-clamp-2">{job.errorMessage || stringifyMeta(job.metadata)}</div>}</div>)}</div>
+          <div className="min-w-0 overflow-hidden border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Chunk samples</h2></div>{scoped.sampledChunks.length === 0 ? <EmptyLine label="No chunks sampled yet." /> : scoped.sampledChunks.map((chunk) => <div key={chunk.id} className="min-w-0 border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto]"><span className="break-words font-medium [overflow-wrap:anywhere]">#{chunk.chunkIndex} / {chunk.sourceType}</span><span className="font-mono text-[11px] text-muted">{chunk.tokenCount ?? 0} tok</span></div><div className="mt-2 break-words font-mono text-[11px] text-muted [overflow-wrap:anywhere]">doc {shortId(chunk.documentId)} / page {chunk.pageNumber ?? "--"}</div><div className="mt-2 break-words text-xs text-muted [overflow-wrap:anywhere] sm:line-clamp-1">{chunk.url || stringifyMeta(chunk.metadata)}</div></div>)}</div>
+          <div className="min-w-0 overflow-hidden border border-black/15 bg-background/80"><div className="border-b border-black/15 px-4 py-3"><h2 className="font-display text-xl">Citations / sources</h2></div>{scoped.recentSources.length === 0 ? <EmptyLine label="No citations yet." /> : scoped.recentSources.map((source) => <div key={source.id} className="min-w-0 border-b border-black/10 px-4 py-4 text-sm last:border-b-0"><div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto]"><span className="font-mono text-[11px] text-muted">score {source.score?.toFixed(3) ?? "--"}</span><span className="font-mono text-[11px] text-muted">{formatDate(source.createdAt)}</span></div><p className="mt-2 break-words text-foreground/75 [overflow-wrap:anywhere] sm:line-clamp-3">{source.snippet || stringifyMeta(source.metadata)}</p><div className="mt-2 break-words font-mono text-[11px] text-muted [overflow-wrap:anywhere]">chunk {shortId(source.chunkId)} / msg {shortId(source.messageId)}</div></div>)}</div>
         </section>
 
         <section className="border border-black/15 bg-background/80">
@@ -216,4 +220,5 @@ export default function AdminTelemetryClient() {
     </div>
   );
 }
+
 
