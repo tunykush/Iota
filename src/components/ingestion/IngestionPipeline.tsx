@@ -18,12 +18,12 @@ const STEPS: { key: StepKey; label: string; description: string; blueprint: stri
 ];
 
 const BLUEPRINT_POINTS = [
-  { x: 28, y: 76 },
-  { x: 92, y: 42 },
-  { x: 164, y: 70 },
-  { x: 238, y: 36 },
-  { x: 310, y: 66 },
-  { x: 382, y: 34 },
+  { x: 34, y: 70 },
+  { x: 104, y: 46 },
+  { x: 174, y: 70 },
+  { x: 246, y: 46 },
+  { x: 316, y: 70 },
+  { x: 386, y: 46 },
 ];
 
 const STAGE_ORDER: Record<string, number> = {
@@ -109,12 +109,36 @@ function StepIcon({ state }: { state: "pending" | "active" | "done" | "error" })
   );
 }
 
-function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceeded, load }: { activeIndex: number; activeStep: (typeof STEPS)[number]; isRunning: boolean; isFailed: boolean; isSucceeded: boolean; load: number }) {
+function MagicRotor({ className = "", reverse = false }: { className?: string; reverse?: boolean }) {
+  return (
+    <g className={className} style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from="0"
+        to={reverse ? "-360" : "360"}
+        dur={reverse ? "10s" : "12s"}
+        repeatCount="indefinite"
+      />
+      <circle r="15" fill="none" stroke="#8a8170" strokeWidth="0.65" strokeDasharray="1 6" opacity="0.34" />
+      <circle r="9" fill="none" stroke="#cf5b3f" strokeWidth="0.55" strokeDasharray="6 8" opacity="0.28" />
+      {Array.from({ length: 6 }).map((_, spark) => (
+        <circle key={spark} cx="0" cy="-15" r={spark % 2 ? "0.9" : "1.2"} fill="#cf5b3f" opacity="0.42" transform={`rotate(${spark * 60})`}>
+          <animate attributeName="opacity" values="0.12;0.58;0.12" dur={`${2.8 + spark * 0.22}s`} begin={`${spark * 0.16}s`} repeatCount="indefinite" />
+        </circle>
+      ))}
+      <path d="M-7 0 C-3 -5 3 -5 7 0 C3 5 -3 5 -7 0Z" fill="none" stroke="#7d7465" strokeWidth="0.55" opacity="0.38" />
+    </g>
+  );
+}
+
+function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceeded, load, compact = false }: { activeIndex: number; activeStep: (typeof STEPS)[number]; isRunning: boolean; isFailed: boolean; isSucceeded: boolean; load: number; compact?: boolean }) {
   const visibleLines = Math.max(0, Math.min(activeIndex, BLUEPRINT_POINTS.length - 1));
   const stateLabel = isFailed ? "needs revision" : isSucceeded ? "sealed" : isRunning ? "drafting" : "standby";
+  const showFinalEngine = activeStep.key === "done" && isSucceeded;
 
   return (
-    <div className="relative overflow-hidden border border-[#6f8fa3]/25 bg-[#f7f4e9] rounded-sm p-4 mb-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)]">
+    <div className={`relative overflow-hidden border border-[#6f8fa3]/25 bg-[#f7f4e9] rounded-sm p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)] ${compact ? "mb-3" : "mb-5"}`}>
       <div className="absolute inset-0 opacity-55 bg-[linear-gradient(rgba(78,118,140,0.10)_1px,transparent_1px),linear-gradient(90deg,rgba(78,118,140,0.10)_1px,transparent_1px)] bg-[size:18px_18px]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(207,91,63,0.10),transparent_26%),radial-gradient(circle_at_82%_24%,rgba(78,118,140,0.12),transparent_24%)]" />
 
@@ -130,7 +154,7 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
         </div>
       </div>
 
-      <div className="relative h-32 overflow-hidden rounded-sm border border-[#6f8fa3]/20 bg-white/25 sm:h-36">
+      <div className={`relative overflow-hidden rounded-sm border border-[#6f8fa3]/20 bg-white/25 ${compact ? "h-[190px]" : "h-32 sm:h-36"}`}>
         <svg viewBox="0 0 410 120" className="absolute inset-0 h-full w-full" aria-hidden="true">
           <defs>
             <filter id="blueprintGlow">
@@ -141,7 +165,7 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
               </feMerge>
             </filter>
           </defs>
-          <path d="M20 96 C78 50 116 30 174 64 S282 90 392 24" fill="none" stroke="#4e768c" strokeWidth="0.8" strokeDasharray="3 6" opacity="0.22" />
+          <path d="M24 88 C92 50 142 48 205 72 S318 78 396 34" fill="none" stroke="#8a8170" strokeWidth="0.65" strokeDasharray="2 9" opacity="0.14" />
           {BLUEPRINT_POINTS.slice(0, -1).map((point, index) => {
             const next = BLUEPRINT_POINTS[index + 1];
             const isVisible = index < visibleLines;
@@ -152,14 +176,13 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
                 y1={point.y}
                 x2={next.x}
                 y2={next.y}
-                stroke={isFailed && index === activeIndex ? "#dc2626" : "#4e768c"}
-                strokeWidth="1.8"
+                stroke={isFailed && index === activeIndex ? "#dc2626" : "#7d7465"}
+                strokeWidth="1.05"
                 strokeLinecap="round"
-                strokeDasharray="120"
+                strokeDasharray={isVisible ? "7 7" : "120"}
                 strokeDashoffset={isVisible ? 0 : 120}
                 className="transition-all duration-700 ease-out"
-                filter={isVisible ? "url(#blueprintGlow)" : undefined}
-                opacity={isVisible ? 0.95 : 0.16}
+                opacity={isVisible ? 0.42 : 0.12}
               />
             );
           })}
@@ -169,13 +192,30 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
             const isVisible = index <= Math.max(activeIndex, 0);
             return (
               <g key={point.x} className="transition-opacity duration-500" opacity={isVisible ? 1 : 0.22}>
-                <circle cx={point.x} cy={point.y} r={isCurrent ? 10 : 7} fill="#f7f4e9" stroke={isFailed && isCurrent ? "#dc2626" : isPast || isCurrent ? "#4e768c" : "#b8b1a2"} strokeWidth="1.4" />
-                <circle cx={point.x} cy={point.y} r="2.2" fill={isFailed && isCurrent ? "#dc2626" : isPast || isCurrent ? "#cf5b3f" : "#b8b1a2"} className={isCurrent && isRunning ? "animate-pulse" : ""} />
-                {isCurrent && <circle cx={point.x} cy={point.y} r="15" fill="none" stroke="#cf5b3f" strokeWidth="0.8" strokeDasharray="2 4" opacity="0.65" />}
+                <circle cx={point.x} cy={point.y} r={isCurrent ? 10 : 7} fill="#f7f4e9" stroke={isFailed && isCurrent ? "#dc2626" : isPast || isCurrent ? "#7d7465" : "#b8b1a2"} strokeWidth="1" strokeDasharray="2 2" opacity={isPast || isCurrent ? 0.72 : 0.32} />
+                <circle cx={point.x} cy={point.y} r="2.2" fill={isFailed && isCurrent ? "#dc2626" : isPast || isCurrent ? "#cf5b3f" : "#b8b1a2"} className={isCurrent && isRunning ? "animate-pulse" : ""} opacity="0.8" />
+                {isCurrent && <circle cx={point.x} cy={point.y} r="15" fill="none" stroke="#cf5b3f" strokeWidth="0.7" strokeDasharray="2 5" opacity="0.36" />}
               </g>
             );
           })}
-          <path d="M26 16 h54 m-27 -7 v14 M326 98 h58 m-29 -7 v14" stroke="#4e768c" strokeWidth="0.8" opacity="0.34" />
+          <path d="M26 16 h54 m-27 -7 v14 M326 98 h58 m-29 -7 v14" stroke="#8a8170" strokeWidth="0.7" opacity="0.28" />
+          {showFinalEngine && (
+            <g transform="translate(210 58)">
+              <rect x="-70" y="-24" width="140" height="48" rx="2" fill="none" stroke="#8a8170" strokeWidth="0.55" strokeDasharray="8 8" opacity="0.18" />
+              <path d="M-70 0 H70 M0 -24 V24" fill="none" stroke="#8a8170" strokeWidth="0.45" strokeDasharray="4 8" opacity="0.18" />
+              <path d="M-48 -10 C-26 -24 26 -24 48 -10 M-48 10 C-24 24 24 24 48 10" fill="none" stroke="#cf5b3f" strokeWidth="0.45" strokeDasharray="2 8" opacity="0.18">
+                <animate attributeName="stroke-dashoffset" values="0;-20" dur="7s" repeatCount="indefinite" />
+              </path>
+              <g transform="translate(-28 0)"><MagicRotor /></g>
+              <g transform="translate(0 0) scale(.82)"><MagicRotor reverse /></g>
+              <g transform="translate(28 0) scale(.68)"><MagicRotor /></g>
+              <circle cx="0" cy="0" r="38" fill="none" stroke="#cf5b3f" strokeWidth="0.45" strokeDasharray="1 9" opacity="0.2">
+                <animate attributeName="r" values="31;40;31" dur="5.8s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.08;0.24;0.08" dur="5.8s" repeatCount="indefinite" />
+              </circle>
+              <text x="0" y="38" textAnchor="middle" className="fill-[#7d7465] font-mono text-[4.5px] uppercase tracking-[0.2em]">arcane core</text>
+            </g>
+          )}
         </svg>
 
         <div className="absolute left-4 bottom-3 right-4 flex items-end justify-between gap-3">
@@ -199,7 +239,7 @@ function BlueprintCore({ activeIndex, activeStep, isRunning, isFailed, isSucceed
 }
 
 // ─── Main component ────────────────────────────────────────────
-export function IngestionPipeline({ job }: { job: IngestionJob | null }) {
+export function IngestionPipeline({ job, compact = false }: { job: IngestionJob | null; compact?: boolean }) {
   const targetIndex = getActiveIndex(job);
   const activeIndex = useRevealedIndex(targetIndex, job?.id);
   const isFailed = job?.status === "failed";
@@ -221,8 +261,8 @@ export function IngestionPipeline({ job }: { job: IngestionJob | null }) {
   }, [activeIndex, embeddingProgress, isFailed, isSucceeded, job]);
 
   return (
-    <div className="border border-black/10 rounded-sm p-5 bg-white/40">
-      <div className="flex items-center justify-between mb-4">
+    <div className={`border border-black/10 rounded-sm bg-white/40 ${compact ? "p-4 xl:p-5" : "p-5"}`}>
+      <div className="mb-4 flex items-center justify-between">
         <div className="text-[9px] font-mono text-muted tracking-widest uppercase">
           Ingestion Pipeline
         </div>
@@ -239,10 +279,10 @@ export function IngestionPipeline({ job }: { job: IngestionJob | null }) {
         )}
       </div>
 
-      <BlueprintCore activeIndex={activeIndex} activeStep={activeStep} isRunning={isRunning} isFailed={Boolean(isFailed)} isSucceeded={Boolean(isSucceeded)} load={load} />
+      <BlueprintCore activeIndex={activeIndex} activeStep={activeStep} isRunning={isRunning} isFailed={Boolean(isFailed)} isSucceeded={Boolean(isSucceeded)} load={load} compact={compact} />
 
       <div className="overflow-x-auto pb-1">
-        <div className="grid min-w-[720px] grid-cols-6 gap-2 sm:min-w-0">
+        <div className={`grid grid-cols-6 gap-2 ${compact ? "min-w-[620px]" : "min-w-[720px] sm:min-w-0"}`}>
         {STEPS.map((step, index) => {
           let state: "pending" | "active" | "done" | "error" = "pending";
           if (index < activeIndex) state = "done";
@@ -252,7 +292,7 @@ export function IngestionPipeline({ job }: { job: IngestionJob | null }) {
           const isLast = index === STEPS.length - 1;
 
           return (
-            <div key={step.key} className="relative min-w-0 rounded-sm border border-black/10 bg-white/25 p-3">
+            <div key={step.key} className={`relative min-w-0 rounded-sm border border-black/10 bg-white/25 ${compact ? "p-2" : "p-3"}`}>
               {!isLast && (
                 <div
                   className={`absolute left-[calc(100%-0.25rem)] top-6 h-px w-3 transition-all duration-700 ${
@@ -282,7 +322,7 @@ export function IngestionPipeline({ job }: { job: IngestionJob | null }) {
                   {step.label}
                 </div>
                 <div
-                  className={`mt-1 line-clamp-2 min-h-[2rem] text-[10px] leading-4 transition-colors duration-300 ${
+                  className={`mt-1 line-clamp-2 text-[10px] leading-4 transition-colors duration-300 ${compact ? "min-h-[1rem] xl:min-h-[2rem]" : "min-h-[2rem]"} ${
                     state === "active" || state === "done" ? "text-muted" : "text-black/20"
                   }`}
                 >
