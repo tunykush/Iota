@@ -157,39 +157,41 @@ export function useChat(initialConversationId?: string | null) {
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed || !trimmed.startsWith("data: ")) continue;
+            let parsed: Record<string, unknown>;
             try {
-              const parsed = JSON.parse(trimmed.slice(6));
-              switch (parsed.type) {
-                case "init":
-                  if (!conversationId && parsed.conversationId) {
-                    setConversationId(parsed.conversationId);
-                  }
-                  break;
-                case "sources":
-                  streamSources = parsed.sources;
-                  break;
-                case "delta":
-                  streamedContent += parsed.delta;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === streamingId
-                        ? { ...m, content: streamedContent, sources: streamSources }
-                        : m,
-                    ),
-                  );
-                  break;
-                case "done":
-                  streamProvider = parsed.provider;
-                  streamModel = parsed.model;
-                  break;
-                case "persisted":
-                  persistedId = parsed.messageId;
-                  break;
-                case "error":
-                  throw new Error(parsed.error);
-              }
-            } catch (e) {
-              if (e instanceof Error && e.message !== "Stream failed") throw e;
+              parsed = JSON.parse(trimmed.slice(6));
+            } catch {
+              // Skip malformed SSE lines (JSON parse errors)
+              continue;
+            }
+            switch (parsed.type) {
+              case "init":
+                if (!conversationId && parsed.conversationId) {
+                  setConversationId(parsed.conversationId as string);
+                }
+                break;
+              case "sources":
+                streamSources = parsed.sources as ChatSource[] | undefined;
+                break;
+              case "delta":
+                streamedContent += parsed.delta as string;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === streamingId
+                      ? { ...m, content: streamedContent, sources: streamSources }
+                      : m,
+                  ),
+                );
+                break;
+              case "done":
+                streamProvider = (parsed.provider as string) ?? "";
+                streamModel = (parsed.model as string) ?? "";
+                break;
+              case "persisted":
+                persistedId = parsed.messageId as string | undefined;
+                break;
+              case "error":
+                throw new Error((parsed.error as string) ?? "Stream failed");
             }
           }
         }

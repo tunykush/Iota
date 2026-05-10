@@ -234,13 +234,17 @@ function ChatWorkspace() {
   const messages = useMemo(() => rawMessages.map(toMessage), [rawMessages]);
 
   // Derive ChatState from hook state
-  const chatState: ChatState = sending
-    ? "loading"
-    : loadingHistory
+  // Check if any message is currently streaming (has isStreaming flag with content)
+  const isStreaming = rawMessages.some((m) => m.isStreaming && m.content.length > 0);
+  const chatState: ChatState = isStreaming
+    ? "streaming"
+    : sending
       ? "loading"
-      : error
-        ? "error"
-        : "idle";
+      : loadingHistory
+        ? "loading"
+        : error
+          ? "error"
+          : "idle";
 
   // Collect all unique citations from assistant messages across the full chat history.
   const allCitations = useMemo(() => {

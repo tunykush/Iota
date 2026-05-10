@@ -96,7 +96,16 @@ function MessageBubble({ msg }: { msg: Message }) {
             {diagnosticLabel && <span className="opacity-60">{diagnosticLabel}</span>}
           </div>
         )}
-        <MessageContent content={msg.content} />
+        {msg.isStreaming && !msg.content ? (
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
+            <span className="w-1.5 h-1.5 bg-accent/60 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+            <span className="w-1.5 h-1.5 bg-accent/30 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+            <span className="text-[11px] text-muted ml-2 font-mono tracking-wider">STREAMING…</span>
+          </div>
+        ) : (
+          <MessageContent content={msg.content} />
+        )}
         {msg.citations && msg.citations.length > 0 && (
           <details className="sources" aria-label="Referenced sources">
             <summary className="cursor-pointer select-none font-mono text-[10px] uppercase tracking-wider text-muted">
@@ -125,7 +134,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             ))}
           </details>
         )}
-        {msg.isStreaming && <span className="cur" />}
+        {msg.isStreaming && msg.content && <span className="cur" />}
       </div>
     </div>
   );
