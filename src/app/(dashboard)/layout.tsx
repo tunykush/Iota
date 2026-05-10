@@ -63,6 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<DashboardUser | null>(null);
   const [documentCount, setDocumentCount] = useState(0);
   const [recentChats, setRecentChats] = useState<Conversation[]>([]);
+  const [showAllChats, setShowAllChats] = useState(false);
 
   const isSettingsActive = pathname === "/dashboard/settings";
   const userInitial = useMemo(() => {
@@ -103,7 +104,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         if (chatsResult.status === "fulfilled") {
-          setRecentChats(chatsResult.value.conversations.slice(0, 3));
+          setRecentChats(chatsResult.value.conversations.slice(0, 10));
         }
       });
     };
@@ -205,24 +206,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <div className="h-px bg-black/10 my-3" />
 
-          <div className="text-[9px] font-mono text-muted tracking-widest uppercase px-2 mb-2">Recent chats</div>
+          <div className="flex items-center justify-between px-2 mb-2">
+            <span className="text-[9px] font-mono text-muted tracking-widest uppercase">Recent chats</span>
+            {recentChats.length > 0 && (
+              <span className="text-[9px] font-mono text-muted">{recentChats.length}</span>
+            )}
+          </div>
           {recentChats.length > 0 ? (
-            recentChats.map((chat) => (
-              <Link
-                key={chat.id}
-                href={`/dashboard/chat?conversationId=${chat.id}`}
-                onClick={() => setSidebarOpen(false)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
-              >
-                <span className="font-serif italic text-accent text-sm leading-none">.</span>
-                <span className="min-w-0 flex-1 truncate">{chat.title ?? "Untitled conversation"}</span>
-                {typeof chat.messageCount === "number" && chat.messageCount > 0 && (
-                  <span className="flex-shrink-0 text-[9px] font-mono text-muted">
-                    {Math.ceil(chat.messageCount / 2)}t
-                  </span>
-                )}
-              </Link>
-            ))
+            <>
+              {(showAllChats ? recentChats : recentChats.slice(0, 3)).map((chat) => (
+                <Link
+                  key={chat.id}
+                  href={`/dashboard/chat?conversationId=${chat.id}`}
+                  onClick={() => setSidebarOpen(false)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-xs text-foreground/60 hover:bg-black/5 hover:text-foreground transition-colors text-left"
+                >
+                  <span className="font-serif italic text-accent text-sm leading-none">.</span>
+                  <span className="min-w-0 flex-1 truncate">{chat.title ?? "Untitled conversation"}</span>
+                  {typeof chat.messageCount === "number" && chat.messageCount > 0 && (
+                    <span className="flex-shrink-0 text-[9px] font-mono text-muted">
+                      {Math.ceil(chat.messageCount / 2)}t
+                    </span>
+                  )}
+                </Link>
+              ))}
+              {recentChats.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllChats((prev) => !prev)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-[10px] font-mono text-muted hover:text-foreground hover:bg-black/5 transition-colors"
+                >
+                  <svg
+                    className={`w-3 h-3 transition-transform duration-200 ${showAllChats ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  <span>{showAllChats ? "Show less" : `Show ${recentChats.length - 3} more`}</span>
+                </button>
+              )}
+            </>
           ) : (
             <div className="px-2 py-1.5 text-[10px] text-muted">No chats yet.</div>
           )}

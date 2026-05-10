@@ -101,7 +101,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
             <span className="w-1.5 h-1.5 bg-accent/60 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
             <span className="w-1.5 h-1.5 bg-accent/30 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
-            <span className="text-[11px] text-muted ml-2 font-mono tracking-wider">STREAMING…</span>
+            <span className="text-[11px] text-muted ml-2 font-mono tracking-wider">RETRIEVING…</span>
           </div>
         ) : (
           <MessageContent content={msg.content} />
@@ -245,12 +245,16 @@ export default function MessageList({ messages, chatState, error, onRetry }: Pro
     );
   }
 
+  // Don't show TypingIndicator if there's already a streaming message bubble
+  const hasStreamingMessage = messages.some((m) => m.isStreaming);
+  const showTyping = chatState === "loading" && !hasStreamingMessage;
+
   return (
     <div className="chat-body">
       {messages.map((msg) => (
         <MessageBubble key={msg.id} msg={msg} />
       ))}
-      {chatState === "loading" && <TypingIndicator />}
+      {showTyping && <TypingIndicator />}
       {chatState === "refusal" && <RefusalState />}
       {chatState === "error" && <ErrorState error={error} onRetry={onRetry} />}
       <div ref={bottomRef} />
