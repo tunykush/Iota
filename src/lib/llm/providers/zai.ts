@@ -2,7 +2,7 @@ import type { LlmGenerateRequest, LlmGenerateResult, LlmProvider } from "../type
 
 const ZAI_BASE_URL = process.env.ZAI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4";
 
-type ZaiModelKey = "glm-4.7" | "glm-4.6" | "glm-4.5";
+type ZaiModelKey = "glm-4.5-flash" | "glm-4.7" | "glm-4.6" | "glm-4.5";
 
 export function createZaiProvider(model: ZaiModelKey): LlmProvider {
   return {

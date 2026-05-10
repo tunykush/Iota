@@ -7,6 +7,7 @@ import { createZaiProvider } from "./providers/zai";
 
 function defaultProviders(): LlmProvider[] {
   return [
+    createZaiProvider("glm-4.5-flash"),
     createZaiProvider("glm-4.7"),
     createZaiProvider("glm-4.6"),
     createZaiProvider("glm-4.5"),
