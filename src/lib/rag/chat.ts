@@ -607,6 +607,9 @@ export async function* streamHybridRagChat(input: {
   topK?: number;
   documentIds?: string[];
 }): AsyncGenerator<string, void, unknown> {
+  // 0. Emit retrieving status immediately so frontend shows progress
+  yield `data: ${JSON.stringify({ type: "status", status: "retrieving" })}\n\n`;
+
   // 1. Retrieve context (non-streaming, fast)
   const agenticEnabled = shouldUseAgenticRag();
   const retrievalResult = agenticEnabled

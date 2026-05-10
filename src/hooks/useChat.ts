@@ -119,6 +119,13 @@ export function useChat(initialConversationId?: string | null) {
 
       setMessages((prev) => [...prev, userMsg, streamingMsg]);
 
+      // Declare outside try/catch so catch block can access partial content
+      let streamedContent = "";
+      let streamSources: ChatSource[] | undefined;
+      let streamProvider = "";
+      let streamModel = "";
+      let persistedId: string | undefined;
+
       try {
         // Use SSE streaming endpoint for real-time token delivery
         const res = await fetch("/api/chat/stream", {
@@ -141,11 +148,6 @@ export function useChat(initialConversationId?: string | null) {
 
         const decoder = new TextDecoder();
         let buffer = "";
-        let streamedContent = "";
-        let streamSources: ChatSource[] | undefined;
-        let streamProvider = "";
-        let streamModel = "";
-        let persistedId: string | undefined;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -169,6 +171,10 @@ export function useChat(initialConversationId?: string | null) {
                 if (!conversationId && parsed.conversationId) {
                   setConversationId(parsed.conversationId as string);
                 }
+                break;
+              case "status":
+                // Status updates (e.g. "retrieving", "generating") — no-op for now,
+                // but confirms the stream connection is alive
                 break;
               case "sources":
                 streamSources = parsed.sources as ChatSource[] | undefined;
@@ -215,11 +221,26 @@ export function useChat(initialConversationId?: string | null) {
 
         return undefined;
       } catch (err) {
-        // Remove streaming placeholder on error
-        setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+        console.error("[useChat] Stream error:", err);
         const msg = err instanceof Error ? err.message : "Failed to send message";
+
+        // Keep the streaming message with whatever content we received,
+        // or show an error fallback — never silently remove it
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamingId
+              ? {
+                  ...m,
+                  content: streamedContent || `⚠ ${msg}`,
+                  isStreaming: false,
+                  provider: streamProvider || undefined,
+                  model: streamModel || undefined,
+                  sources: streamSources,
+                }
+              : m,
+          ),
+        );
         setError(msg);
-        throw err;
       } finally {
         setSending(false);
         sendingRef.current = false;
