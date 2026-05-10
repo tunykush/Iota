@@ -227,9 +227,9 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Documents list */}
       <div className="border border-black/10 rounded-sm overflow-hidden bg-white/30">
-        <div className="grid grid-cols-[1fr_64px_96px_76px_76px_76px_40px] gap-3 px-4 py-2.5 bg-black/[0.03] border-b border-black/10 text-[9px] font-mono text-muted tracking-widest uppercase">
+        <div className="hidden md:grid grid-cols-[minmax(180px,1fr)_64px_96px_76px_76px_76px_40px] gap-3 px-4 py-2.5 bg-black/[0.03] border-b border-black/10 text-[9px] font-mono text-muted tracking-widest uppercase">
           <span>Name</span>
           <span>Type</span>
           <span>Status</span>
@@ -259,18 +259,34 @@ export default function DocumentsPage() {
           documents.map((doc) => (
             <div
               key={doc.id}
-              className="grid grid-cols-[1fr_64px_96px_76px_76px_76px_40px] gap-3 px-4 py-3 items-center border-b border-black/[0.06] last:border-b-0 text-sm"
+              className="border-b border-black/[0.06] px-4 py-4 text-sm last:border-b-0 md:grid md:grid-cols-[minmax(180px,1fr)_64px_96px_76px_76px_76px_40px] md:items-center md:gap-3 md:py-3"
             >
-              <span className="truncate text-xs font-medium">{doc.title}</span>
-              <TypeBadge type={sourceTypeLabel(doc.sourceType)} />
-              <StatusBadge status={doc.status} />
-              <span className="text-right text-xs text-muted font-mono">
-                {doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "—"}
-              </span>
-              <span className="text-right text-[10px] text-muted font-mono">
-                {formatDate(doc.updatedAt)}
-              </span>
-              <span className="text-right">
+              <div className="min-w-0 md:contents">
+                <div className="min-w-0">
+                  <span className="block break-words text-sm font-medium leading-5 md:truncate md:text-xs">{doc.title}</span>
+                  <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted md:hidden">
+                    Updated {formatDate(doc.updatedAt)}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0 md:block">
+                  <TypeBadge type={sourceTypeLabel(doc.sourceType)} />
+                  <StatusBadge status={doc.status} />
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted md:contents">
+                  <span className="md:hidden">Chunks</span>
+                  <span className="text-right text-xs normal-case tracking-normal md:text-right md:font-mono md:text-muted">
+                    {doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "—"}
+                  </span>
+                  <span className="hidden text-right text-[10px] text-muted font-mono md:block">
+                    {formatDate(doc.updatedAt)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-black/[0.06] pt-3 md:mt-0 md:contents md:border-0 md:pt-0">
+                <span className="text-right md:block">
                 {doc.sourceType === "website" && doc.status === "failed" ? (
                   <button
                     type="button"
@@ -283,16 +299,17 @@ export default function DocumentsPage() {
                 ) : (
                   <span className="text-[10px] text-muted font-mono">—</span>
                 )}
-              </span>
-              <button
-                type="button"
-                onClick={() => setConfirmDoc(doc)}
-                disabled={deleting === doc.id}
-                className="text-muted hover:text-red-500 transition-colors text-[11px] font-mono"
-                aria-label={`Delete ${doc.title}`}
-              >
-                ✕
-              </button>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDoc(doc)}
+                  disabled={deleting === doc.id}
+                  className="text-muted hover:text-red-500 transition-colors text-[11px] font-mono"
+                  aria-label={`Delete ${doc.title}`}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
       </div>
