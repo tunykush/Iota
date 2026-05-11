@@ -106,6 +106,12 @@ export type ChatRetrievalDiagnostics = {
   scopedDocumentIds: string[];
   sourceTitles: string[];
   topScore?: number;
+  llmReranker?: {
+    reranked: boolean;
+    latencyMs: number;
+    inputChunks: number;
+    outputChunks: number;
+  };
 };
 
 export type ChatMessageResponse = {

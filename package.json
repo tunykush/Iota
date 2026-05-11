@@ -6,8 +6,11 @@
     "dev": "next dev -H 0.0.0.0 --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "bunx tsc --noEmit && next lint",
-    "format": "bunx biome format --write"
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck && next lint",
+    "test": "node scripts/run-tests.mjs",
+    "check": "npm run lint && npm test",
+    "format": "biome format --write ."
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

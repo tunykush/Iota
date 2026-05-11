@@ -25,6 +25,19 @@ function readDiagnostics(metadata: Record<string, unknown>): ChatRetrievalDiagno
       scopedDocumentIds: diagnostics.scopedDocumentIds.filter((id): id is string => typeof id === "string"),
       sourceTitles: diagnostics.sourceTitles.filter((title): title is string => typeof title === "string"),
       topScore: typeof diagnostics.topScore === "number" ? diagnostics.topScore : undefined,
+      llmReranker: diagnostics.llmReranker &&
+        typeof diagnostics.llmReranker === "object" &&
+        typeof diagnostics.llmReranker.reranked === "boolean" &&
+        typeof diagnostics.llmReranker.latencyMs === "number" &&
+        typeof diagnostics.llmReranker.inputChunks === "number" &&
+        typeof diagnostics.llmReranker.outputChunks === "number"
+        ? {
+            reranked: diagnostics.llmReranker.reranked,
+            latencyMs: diagnostics.llmReranker.latencyMs,
+            inputChunks: diagnostics.llmReranker.inputChunks,
+            outputChunks: diagnostics.llmReranker.outputChunks,
+          }
+        : undefined,
     };
   }
 

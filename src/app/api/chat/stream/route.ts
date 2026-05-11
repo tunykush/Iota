@@ -2,7 +2,7 @@
 // Streams LLM tokens as Server-Sent Events for real-time UI updates.
 
 import { NextRequest } from "next/server";
-import type { ChatRequest } from "@/lib/api/types";
+import type { ChatRequest, ChatSource } from "@/lib/api/types";
 import { streamHybridRagChat } from "@/lib/rag/chat";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,6 +12,36 @@ const MAX_MESSAGE_LENGTH = 32_000;
 
 function autoTitle(message: string): string {
   return message.length > 60 ? `${message.slice(0, 57)}...` : message;
+}
+
+async function persistMessageSources(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  messageId: string;
+  sources: ChatSource[];
+}) {
+  if (input.sources.length === 0) return;
+
+  const { error } = await input.supabase.from("message_sources").insert(
+    input.sources.map((source) => ({
+      user_id: input.userId,
+      message_id: input.messageId,
+      document_id: source.documentId,
+      chunk_id: source.chunkId,
+      score: source.score,
+      snippet: source.snippet,
+      metadata: {
+        title: source.title,
+        sourceType: source.sourceType,
+        pageNumber: source.pageNumber ?? null,
+        url: source.url ?? null,
+      },
+    })),
+  );
+
+  if (error) {
+    console.error("Failed to save streaming message sources", error);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -68,15 +98,36 @@ export async function POST(request: NextRequest) {
       });
     }
     convId = data.id;
+  } else {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (error || !data) {
+      return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: `Conversation '${convId}' not found` } }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }
 
   // Save user message
-  await supabase.from("conversation_messages").insert({
+  const { error: userMessageError } = await supabase.from("conversation_messages").insert({
     user_id: user.id,
     conversation_id: convId,
     role: "user",
     content: message.trim(),
   });
+
+  if (userMessageError) {
+    return new Response(JSON.stringify({ error: { code: "DATABASE_ERROR", message: userMessageError.message } }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const finalConvId = convId;
 
@@ -91,6 +142,7 @@ export async function POST(request: NextRequest) {
         let fullContent = "";
         let provider = "";
         let model = "";
+        let streamSources: ChatSource[] = [];
 
         for await (const event of streamHybridRagChat({
           supabase,
@@ -107,6 +159,9 @@ export async function POST(request: NextRequest) {
             if (dataMatch) {
               const parsed = JSON.parse(dataMatch[1]);
               if (parsed.type === "complete") fullContent = parsed.content;
+              if (parsed.type === "sources" && Array.isArray(parsed.sources)) {
+                streamSources = parsed.sources as ChatSource[];
+              }
               if (parsed.type === "done") {
                 provider = parsed.provider;
                 model = parsed.model;
@@ -117,7 +172,7 @@ export async function POST(request: NextRequest) {
 
         // Persist assistant message
         if (fullContent) {
-          const { data: assistantMsg } = await supabase
+          const { data: assistantMsg, error: assistantMessageError } = await supabase
             .from("conversation_messages")
             .insert({
               user_id: user.id,
@@ -130,10 +185,20 @@ export async function POST(request: NextRequest) {
             .select("id")
             .single();
 
-          // Emit persisted message ID
-          if (assistantMsg) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "persisted", messageId: assistantMsg.id })}\n\n`));
+          if (assistantMessageError || !assistantMsg) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: assistantMessageError?.message ?? "Failed to save assistant message" })}\n\n`));
+            return;
           }
+
+          await persistMessageSources({
+            supabase,
+            userId: user.id,
+            messageId: assistantMsg.id,
+            sources: streamSources,
+          });
+
+          // Emit persisted message ID
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "persisted", messageId: assistantMsg.id })}\n\n`));
 
           await supabase
             .from("conversations")

@@ -149,6 +149,7 @@ export async function POST(request: NextRequest) {
     const pages = await extractPdfPages(bytes);
     const fullText = pages.map((p) => p.text).join("\n\n");
     const baseMeta = { filename: file.name, size: file.size, extractionMode: "pdf-parse", pageCount: pages.length };
+    const pageChunks = pages.map((page) => ({ text: page.text, pageNumber: page.num }));
 
     // Use smart ingestion: auto-detects books vs standard documents
     const smartResult = await ragServices.ingestion.ingestDocumentSmart({
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
       jobId: job.id,
       sourceType: "pdf",
       text: fullText,
+      pageChunks,
       metadata: baseMeta,
     });
     chunkCount = smartResult.count;

@@ -16,6 +16,8 @@ export type IngestDocumentInput = {
   jobId: string;
   sourceType: DocumentSourceType;
   text: string;
+  /** Optional source text split by PDF page so chunk citations can preserve page_number. */
+  pageChunks?: IngestibleChunk[];
   url?: string;
   metadata?: Record<string, unknown>;
 };
@@ -150,6 +152,20 @@ export function chunkText(text: string): string[] {
 
 export function chunkTextWithPageNumber(text: string, pageNumber?: number): IngestibleChunk[] {
   return chunkText(text).map((chunk) => ({ text: chunk, pageNumber }));
+}
+
+function chunkInputText(input: IngestDocumentInput): IngestibleChunk[] {
+  if (input.pageChunks?.length) {
+    return input.pageChunks.flatMap((page) =>
+      chunkText(page.text).map((text) => ({
+        text,
+        pageNumber: page.pageNumber,
+        metadata: page.metadata,
+      })),
+    );
+  }
+
+  return chunkText(input.text).map((text) => ({ text }));
 }
 
 // Re-export semantic chunker for use in ingestion pipelines
@@ -309,8 +325,43 @@ export async function ingestDocumentChunks(input: IngestDocumentChunksInput): Pr
 export async function ingestDocumentText(input: IngestDocumentInput): Promise<number> {
   return ingestDocumentChunks({
     ...input,
-    chunks: chunkText(input.text).map((text) => ({ text })),
+    chunks: chunkInputText(input),
   });
+}
+
+function inferPageNumberFromPosition(
+  positionInBook: number,
+  pageChunks: IngestibleChunk[] | undefined,
+  totalCharacters: number,
+): number | undefined {
+  const pages = pageChunks?.filter((page) => page.text.trim().length > 0);
+  if (!pages?.length) return undefined;
+
+  const estimatedTotal = pages.reduce((sum, page, index) => sum + page.text.length + (index > 0 ? 2 : 0), 0);
+  const total = Math.max(estimatedTotal, totalCharacters, 1);
+  const targetOffset = Math.max(0, Math.min(1, positionInBook)) * total;
+
+  let offset = 0;
+  for (const page of pages) {
+    const end = offset + page.text.length;
+    if (targetOffset <= end) return page.pageNumber;
+    offset = end + 2;
+  }
+
+  return pages.at(-1)?.pageNumber;
+}
+
+function addPageNumbersToBookChunks(
+  chunks: BookChunk[],
+  pageChunks: IngestibleChunk[] | undefined,
+  totalCharacters: number,
+): BookChunk[] {
+  if (!pageChunks?.length) return chunks;
+
+  return chunks.map((chunk) => ({
+    ...chunk,
+    pageNumber: chunk.pageNumber ?? inferPageNumberFromPosition(chunk.metadata.positionInBook, pageChunks, totalCharacters),
+  }));
 }
 
 /**
@@ -388,7 +439,13 @@ export async function ingestDocumentSmart(input: IngestDocumentInput): Promise<{
   }
 
   // ── Step 3: Build IngestibleChunks with book-specific columns ──
-  const bookChunks: IngestibleChunk[] = bookResult.chunks.map((bc: BookChunk) => ({
+  const bookChunksWithPages = addPageNumbersToBookChunks(
+    bookResult.chunks,
+    input.pageChunks,
+    structure.totalCharacters,
+  );
+
+  const bookChunks: IngestibleChunk[] = bookChunksWithPages.map((bc: BookChunk) => ({
     text: bc.text,
     pageNumber: bc.pageNumber,
     metadata: {

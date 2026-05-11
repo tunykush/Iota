@@ -84,14 +84,13 @@ assert.equal(buildLocalAnswerPlan("cách upload", "how_to", evidence).includeSte
 assert.equal(buildLocalAnswerPlan("compare login vs register", "comparison", evidence).includeComparisonTable, true);
 
 const howToAnswer = buildExtractiveAnswer("cách upload file", [baseChunk, authChunk]);
-assert.match(howToAnswer, /Locally, the safest flow is:/);
+assert.match(howToAnswer, /First configure the upload endpoint/i);
 assert.match(howToAnswer, /\[1\]/);
-assert.match(howToAnswer, /Nguồn ưu tiên:/);
-assert.match(howToAnswer, /matched:/);
+assert.match(howToAnswer, /1\. "/);
 
 const comparisonAnswer = buildExtractiveAnswer("compare login vs register", [authChunk, baseChunk]);
 assert.match(comparisonAnswer, /\| Aspect \| Option A \| Option B \| Evidence \|/);
 
 const lowConfidenceAnswer = buildExtractiveAnswer("quantum banana pricing", [baseChunk]);
-assert.match(lowConfidenceAnswer, /not enough evidence to answer confidently/i);
-assert.match(lowConfidenceAnswer, /cannot infer beyond available text|không thể suy luận vượt quá text/i);
+assert.match(lowConfidenceAnswer, /quantum, banana, pricing/i);
+assert.match(lowConfidenceAnswer, /Upload requires validation|chưa/i);

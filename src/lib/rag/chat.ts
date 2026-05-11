@@ -7,6 +7,7 @@ import { detectAnswerMode, expandSectionChunks, extractRequirements, validatePro
 import { buildProcedureMessages, appendValidationWarnings } from "./procedure-prompts";
 import { buildRagMessages, buildToolAugmentedRagMessages } from "./prompts";
 import { retrieveRelevantChunks, type RetrievedChunk } from "./retrieval";
+import { rerankChunks } from "./reranker";
 
 export type RagChatResult = {
   content: string;
@@ -24,6 +25,12 @@ export type RagChatResult = {
       topScore?: number;
       agentic?: AgenticRagTrace;
       contextOrchestrator?: ContextOrchestratorDiagnostics;
+      llmReranker?: {
+        reranked: boolean;
+        latencyMs: number;
+        inputChunks: number;
+        outputChunks: number;
+      };
     };
   };
 };
@@ -456,13 +463,15 @@ export async function runHybridRagChat(input: {
   documentIds?: string[];
   mode?: ChatGenerationMode;
 }): Promise<RagChatResult> {
+  const requestedTopK = input.topK ?? 5;
+  const candidateTopK = Math.min(Math.max(requestedTopK * 2, 8), 20);
   const agenticEnabled = shouldUseAgenticRag();
   const retrievalResult = agenticEnabled
     ? await retrieveAgenticContext({
       supabase: input.supabase,
       userId: input.userId,
       question: input.message,
-      topK: input.topK,
+      topK: candidateTopK,
       documentIds: input.documentIds,
     })
     : {
@@ -470,12 +479,13 @@ export async function runHybridRagChat(input: {
         supabase: input.supabase,
         userId: input.userId,
         query: input.message,
-        topK: input.topK,
+        topK: candidateTopK,
         documentIds: input.documentIds,
       }),
       trace: undefined,
     };
-  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
+  const llmReranker = await rerankChunks(input.message, retrievalResult.chunks, requestedTopK);
+  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: llmReranker.chunks });
   let chunks = contextOrchestrator.chunks;
   const chatMode = resolveRagChatMode(input.mode);
 
@@ -505,13 +515,19 @@ export async function runHybridRagChat(input: {
   const sources = chunks.map(({ text: _text, ...source }) => source);
   const diagnostics = {
     mode: chatMode,
-    requestedTopK: input.topK ?? 5,
+    requestedTopK,
     returnedChunks: chunks.length,
     scopedDocumentIds: input.documentIds ?? [],
     sourceTitles: Array.from(new Set(chunks.map((chunk) => chunk.title))).slice(0, 8),
     topScore: chunks[0]?.score,
     agentic: retrievalResult.trace,
     contextOrchestrator: contextOrchestrator.diagnostics,
+    llmReranker: {
+      reranked: llmReranker.reranked,
+      latencyMs: llmReranker.latencyMs,
+      inputChunks: retrievalResult.chunks.length,
+      outputChunks: llmReranker.chunks.length,
+    },
   };
 
   if (chatMode === "local") {
@@ -653,13 +669,15 @@ export async function* streamHybridRagChat(input: {
   yield `data: ${JSON.stringify({ type: "status", status: "retrieving" })}\n\n`;
 
   // 1. Retrieve context (non-streaming, fast)
+  const requestedTopK = input.topK ?? 5;
+  const candidateTopK = Math.min(Math.max(requestedTopK * 2, 8), 20);
   const agenticEnabled = shouldUseAgenticRag();
   const retrievalResult = agenticEnabled
     ? await retrieveAgenticContext({
       supabase: input.supabase,
       userId: input.userId,
       question: input.message,
-      topK: input.topK,
+      topK: candidateTopK,
       documentIds: input.documentIds,
     })
     : {
@@ -667,13 +685,14 @@ export async function* streamHybridRagChat(input: {
         supabase: input.supabase,
         userId: input.userId,
         query: input.message,
-        topK: input.topK,
+        topK: candidateTopK,
         documentIds: input.documentIds,
       }),
       trace: undefined,
     };
 
-  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
+  const llmReranker = await rerankChunks(input.message, retrievalResult.chunks, requestedTopK);
+  const contextOrchestrator = orchestrateContext({ query: input.message, chunks: llmReranker.chunks });
   let chunks = contextOrchestrator.chunks;
 
   // ── Procedure Mode Detection (streaming) ──
