@@ -2,7 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Skeleton as BoneyardSkeleton } from "boneyard-js/react";
 import { MessageList, ChatComposer, CitationPanel } from "@/components/chat";
+import { ChatWorkspaceFixture } from "@/components/dashboard/ChatWorkspaceFixture";
+import { IOTA_BONEYARD_SNAPSHOT_CONFIG } from "@/components/dashboard/boneyard";
 import { useChat } from "@/hooks/useChat";
 import { useDocuments } from "@/hooks/useDocuments";
 import type { Message, Citation, ChatState } from "@/types";
@@ -13,6 +16,12 @@ type CompactDropdownOption = {
   value: string;
   label: string;
 };
+
+const CHAT_MODE_OPTIONS: CompactDropdownOption[] = [
+  { value: "auto", label: "Auto" },
+  { value: "llm", label: "LLM" },
+  { value: "local", label: "Local" },
+];
 
 function CompactDropdown({
   label,
@@ -102,6 +111,19 @@ function CompactDropdown({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ChatWorkspaceLoading() {
+  return (
+    <BoneyardSkeleton
+      name="chat-workspace"
+      loading
+      fixture={<ChatWorkspaceFixture />}
+      snapshotConfig={IOTA_BONEYARD_SNAPSHOT_CONFIG}
+    >
+      <ChatWorkspaceFixture />
+    </BoneyardSkeleton>
   );
 }
 
@@ -323,15 +345,17 @@ function ChatWorkspace() {
     [documents],
   );
   const modeOptions = useMemo(
-    () => [
-      { value: "auto", label: "Auto" },
-      { value: "llm", label: "LLM" },
-      { value: "local", label: "Local" },
-    ],
+    () => CHAT_MODE_OPTIONS,
     [],
   );
 
   return (
+    <BoneyardSkeleton
+      name="chat-workspace"
+      loading={loadingHistory || loadingDocuments}
+      fixture={<ChatWorkspaceFixture />}
+      snapshotConfig={IOTA_BONEYARD_SNAPSHOT_CONFIG}
+    >
     <div className="chat-workspace">
       {/* Header */}
       <div className="p-4 lg:px-6 border-b border-black/10">
@@ -438,12 +462,13 @@ function ChatWorkspace() {
         />
       ) : null}
     </div>
+    </BoneyardSkeleton>
   );
 }
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-muted">Loading chat workspace...</div>}>
+    <Suspense fallback={<ChatWorkspaceLoading />}>
       <ChatWorkspace />
     </Suspense>
   );

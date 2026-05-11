@@ -1,8 +1,11 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Skeleton as BoneyardSkeleton } from "boneyard-js/react";
+import { IOTA_BONEYARD_SNAPSHOT_CONFIG } from "@/components/dashboard/boneyard";
 import { adminApi } from "@/lib/api/client";
 import type { AdminBreakdowns, AdminOverviewResponse } from "@/lib/api/types";
+import { ADMIN_TELEMETRY_FIXTURE } from "./adminTelemetryFixture";
 
 function formatDate(value?: string) {
   if (!value) return "--";
@@ -57,18 +60,6 @@ function BreakdownPanel({ title, rows }: { title: string; rows: Record<string, n
   );
 }
 
-function Breakdowns({ breakdowns }: { breakdowns: AdminBreakdowns }) {
-  return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-      <BreakdownPanel title="Doc status" rows={breakdowns.documentsByStatus} />
-      <BreakdownPanel title="Sources" rows={breakdowns.documentsBySourceType} />
-      <BreakdownPanel title="Jobs" rows={breakdowns.jobsByStatus} />
-      <BreakdownPanel title="Messages" rows={breakdowns.messagesByRole} />
-      <BreakdownPanel title="Chunks" rows={breakdowns.chunksBySourceType} />
-    </section>
-  );
-}
-
 export default function AdminTelemetryClient() {
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,8 +74,55 @@ export default function AdminTelemetryClient() {
       .finally(() => setLoading(false));
   }, []);
 
-  const selectedUser = useMemo(() => data?.users.find((user) => user.id === selectedUserId), [data, selectedUserId]);
-  const scoped = selectedUserId === "all" ? data : data ? {
+  if (error) {
+    return <div className="p-6"><div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div></div>;
+  }
+
+  return (
+    <BoneyardSkeleton
+      name="admin-telemetry"
+      loading={loading}
+      fixture={
+        <AdminTelemetrySurface
+          data={ADMIN_TELEMETRY_FIXTURE}
+          selectedUserId="all"
+          setSelectedUserId={() => undefined}
+        />
+      }
+      snapshotConfig={IOTA_BONEYARD_SNAPSHOT_CONFIG}
+    >
+      <AdminTelemetrySurface
+        data={data ?? ADMIN_TELEMETRY_FIXTURE}
+        selectedUserId={selectedUserId}
+        setSelectedUserId={setSelectedUserId}
+      />
+    </BoneyardSkeleton>
+  );
+}
+
+function Breakdowns({ breakdowns }: { breakdowns: AdminBreakdowns }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <BreakdownPanel title="Doc status" rows={breakdowns.documentsByStatus} />
+      <BreakdownPanel title="Sources" rows={breakdowns.documentsBySourceType} />
+      <BreakdownPanel title="Jobs" rows={breakdowns.jobsByStatus} />
+      <BreakdownPanel title="Messages" rows={breakdowns.messagesByRole} />
+      <BreakdownPanel title="Chunks" rows={breakdowns.chunksBySourceType} />
+    </section>
+  );
+}
+
+export function AdminTelemetrySurface({
+  data,
+  selectedUserId,
+  setSelectedUserId,
+}: {
+  data: AdminOverviewResponse;
+  selectedUserId: string;
+  setSelectedUserId: (value: string) => void;
+}) {
+  const selectedUser = useMemo(() => data.users.find((user) => user.id === selectedUserId), [data, selectedUserId]);
+  const scoped = selectedUserId === "all" ? data : {
     ...data,
     recentDocuments: data.recentDocuments.filter((item) => item.userId === selectedUserId),
     recentJobs: data.recentJobs.filter((item) => item.userId === selectedUserId),
@@ -92,15 +130,7 @@ export default function AdminTelemetryClient() {
     sampledChunks: data.sampledChunks.filter((item) => item.userId === selectedUserId),
     recentSources: data.recentSources.filter((item) => item.userId === selectedUserId),
     timeline: data.timeline.filter((item) => item.userId === selectedUserId),
-  } : null;
-
-  if (loading) return <div className="p-6 text-sm text-muted">Drafting admin telemetry surface...</div>;
-
-  if (error) {
-    return <div className="p-6"><div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div></div>;
-  }
-
-  if (!data || !scoped) return null;
+  };
 
   const stats = [
     ["Users", data.stats.userCount, "registered accounts"],

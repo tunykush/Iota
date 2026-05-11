@@ -1,0 +1,15 @@
+{
+  "breakpoints": [375, 768, 1024, 1280],
+  "out": "./src/bones",
+  "wait": 1000,
+  "routes": ["/boneyard-capture"],
+  "color": "rgba(26, 26, 26, 0.075)",
+  "darkColor": "rgba(255, 255, 255, 0.08)",
+  "animate": "shimmer",
+  "shimmerColor": "rgba(255, 255, 255, 0.42)",
+  "darkShimmerColor": "rgba(255, 255, 255, 0.14)",
+  "speed": "1.9s",
+  "shimmerAngle": 112,
+  "stagger": 12,
+  "transition": 240
+}

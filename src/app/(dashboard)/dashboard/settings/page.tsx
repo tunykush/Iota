@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton as BoneyardSkeleton } from "boneyard-js/react";
+import { IOTA_BONEYARD_SNAPSHOT_CONFIG } from "@/components/dashboard/boneyard";
 import { CustomSelect } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 
@@ -145,26 +147,12 @@ function TogglePill({ label, enabled }: { label: string; enabled: boolean }) {
   );
 }
 
-export default function SettingsPage() {
-  const [profile, setProfile] = useState<Profile>({ email: "", name: "" });
+const SETTINGS_FIXTURE_PROFILE: Profile = {
+  email: "avery@iota.local",
+  name: "Avery Nguyen",
+};
 
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getUser().then(({ data }) => {
-      const user = data.user;
-      if (!user?.email) return;
-
-      const fullName = user.user_metadata?.full_name as string | undefined;
-      const firstName = user.user_metadata?.first_name as string | undefined;
-
-      setProfile({
-        email: user.email,
-        name: fullName?.trim() || firstName?.trim() || user.email.split("@")[0],
-      });
-    });
-  }, []);
-
+function SettingsSurface({ profile }: { profile: Profile }) {
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-2">
@@ -393,5 +381,42 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  const [profile, setProfile] = useState<Profile>({ email: "", name: "" });
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (!user?.email) {
+        setProfileLoaded(true);
+        return;
+      }
+
+      const fullName = user.user_metadata?.full_name as string | undefined;
+      const firstName = user.user_metadata?.first_name as string | undefined;
+
+      setProfile({
+        email: user.email,
+        name: fullName?.trim() || firstName?.trim() || user.email.split("@")[0],
+      });
+      setProfileLoaded(true);
+    });
+  }, []);
+
+  return (
+    <BoneyardSkeleton
+      name="settings-page"
+      loading={!profileLoaded}
+      fixture={<SettingsSurface profile={SETTINGS_FIXTURE_PROFILE} />}
+      snapshotConfig={IOTA_BONEYARD_SNAPSHOT_CONFIG}
+    >
+      <SettingsSurface profile={profileLoaded ? profile : SETTINGS_FIXTURE_PROFILE} />
+    </BoneyardSkeleton>
   );
 }
