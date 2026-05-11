@@ -24,10 +24,10 @@ export default function ContributorTicker() {
               {[...TICKER_CITIES, ...TICKER_CITIES].map((city, index) => (
                 <div
                   key={`city-${index}`}
-                  className="flex items-center mx-5 font-mono text-[13px] font-medium tracking-wider"
+                  className="flex items-center mx-5 font-mono text-[13px] font-normal tracking-wider"
                 >
-                  <span className="text-muted font-normal mr-2">{city.coord}</span>
-                  <span>{city.name}</span>
+                  <span className="text-muted/70 font-light mr-2">{city.coord}</span>
+                  <span className="font-light text-foreground/80">{city.name}</span>
                 </div>
               ))}
             </div>
@@ -42,18 +42,18 @@ export default function ContributorTicker() {
               ].map((user, index) => (
                 <div
                   key={`user-${index}`}
-                  className="flex items-center mx-5 font-mono text-[13px] tracking-wider"
+                  className="flex items-center mx-5 font-mono text-[13px] font-light tracking-wider text-foreground/80"
                 >
                   <Link
                     href={`https://github.com/${user.username}`}
-                    className="text-accent font-medium mr-2 hover:underline"
+                    className="text-accent/90 font-normal mr-2 hover:underline"
                   >
                     @{user.username}
                   </Link>
-                  <span className="font-medium">
+                  <span className="font-light">
                     {user.tokens === "be next" ? "be next" : `${user.tokens} tokens`}
                   </span>
-                  <span className="text-muted text-[11px] ml-2 tracking-widest uppercase">this week</span>
+                  <span className="text-muted/70 text-[11px] font-light ml-2 tracking-widest uppercase">this week</span>
                 </div>
               ))}
             </div>
