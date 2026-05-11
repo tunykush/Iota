@@ -206,7 +206,13 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl overflow-x-hidden p-4 lg:p-8">
+    <div className="relative mx-auto w-full max-w-6xl overflow-x-hidden p-4 lg:p-8">
+      <div className="pointer-events-none absolute left-0 top-7 hidden h-px w-10 bg-black/15 lg:block" />
+      <div className="pointer-events-none absolute right-0 top-7 hidden h-px w-10 bg-black/15 lg:block" />
+      <div className="pointer-events-none absolute right-8 top-3 hidden items-center gap-2 font-mono text-[8px] uppercase tracking-[0.3em] text-muted lg:flex">
+        <span className="h-px w-8 bg-accent/45" />
+        <span>Source plan / ref 03</span>
+      </div>
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-black/10 pb-5">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -250,7 +256,17 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <section>
+      <section className="relative">
+        <div className="pointer-events-none absolute -left-5 top-0 hidden h-full border-l border-dashed border-black/15 lg:block" />
+        <div className="pointer-events-none absolute -left-8 top-1 hidden font-mono text-[8px] uppercase tracking-[0.24em] text-muted [writing-mode:vertical-rl] lg:block">
+          registry elevation
+        </div>
+        <div className="pointer-events-none absolute -right-10 top-0 hidden h-20 border-r border-black/15 xl:block" />
+        <div className="pointer-events-none absolute -right-10 top-0 hidden w-7 border-t border-black/15 xl:block" />
+        <div className="pointer-events-none absolute -right-10 top-20 hidden w-7 border-t border-black/15 xl:block" />
+        <div className="pointer-events-none absolute -right-24 top-8 hidden font-mono text-[8px] uppercase tracking-[0.24em] text-muted xl:block">
+          live index
+        </div>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
