@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Database, FileText, Globe2, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useDocuments, useDeleteDocument, useRetryDocumentIngestion } from "@/hooks/useDocuments";
 import type { Document, DocumentSourceType, DocumentStatus } from "@/lib/api/types";
 
-// ─── Helpers ───────────────────────────────────────────────────
 function sourceTypeLabel(t: DocumentSourceType): string {
   return t === "pdf" ? "PDF" : t === "website" ? "SITE" : "DB";
 }
@@ -20,6 +19,10 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit" });
 }
 
+function documentSubtitle(doc: Document): string {
+  return doc.originalFilename ?? doc.url ?? sourceTypeLabel(doc.sourceType);
+}
+
 function StatusBadge({ status }: { status: DocumentStatus }) {
   const map: Record<DocumentStatus, string> = {
     ready: "dash-badge-ok",
@@ -31,13 +34,14 @@ function StatusBadge({ status }: { status: DocumentStatus }) {
     processing: "processing",
     failed: "failed",
   };
-  const icon: Record<DocumentStatus, React.ReactNode> = {
+  const icon: Record<DocumentStatus, ReactNode> = {
     ready: <CheckCircle2 className="h-3 w-3" aria-hidden="true" />,
     processing: <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />,
     failed: <AlertTriangle className="h-3 w-3" aria-hidden="true" />,
   };
+
   return (
-    <span className={`dash-badge inline-flex h-7 items-center gap-1.5 ${map[status]}`}>
+    <span className={`dash-badge inline-flex items-center gap-1.5 ${map[status]}`}>
       {icon[status]}
       {label[status]}
     </span>
@@ -46,7 +50,7 @@ function StatusBadge({ status }: { status: DocumentStatus }) {
 
 function TypeBadge({ type, sourceType }: { type: string; sourceType: DocumentSourceType }) {
   return (
-    <span className="inline-flex h-7 w-fit items-center gap-1.5 border border-black/10 bg-white/35 px-2 font-mono text-[9px] uppercase tracking-wider text-muted">
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-sm border border-black/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted">
       {sourceTypeIcon(sourceType)}
       {type}
     </span>
@@ -61,7 +65,6 @@ function ChunkValue({ doc }: { doc: Document }) {
   );
 }
 
-// ─── Delete confirmation dialog ────────────────────────────────
 function DeleteConfirm({
   doc,
   onConfirm,
@@ -169,7 +172,6 @@ function DeleteConfirm({
   );
 }
 
-// ─── Page ──────────────────────────────────────────────────────
 export default function DocumentsPage() {
   const { documents, loading, error, refetch } = useDocuments();
   const { deleteDocument, deleting } = useDeleteDocument();
@@ -179,6 +181,9 @@ export default function DocumentsPage() {
   const pdfCount = documents.filter((d) => d.sourceType === "pdf").length;
   const siteCount = documents.filter((d) => d.sourceType === "website").length;
   const dbCount = documents.filter((d) => d.sourceType === "database").length;
+  const readyCount = documents.filter((d) => d.status === "ready").length;
+  const processingCount = documents.filter((d) => d.status === "processing").length;
+  const failedCount = documents.filter((d) => d.status === "failed").length;
 
   const handleDeleteConfirm = async () => {
     if (!confirmDoc) return;
@@ -187,7 +192,7 @@ export default function DocumentsPage() {
       setConfirmDoc(null);
       refetch();
     } catch {
-      // error shown inline
+      // Error shown inline by the hook.
     }
   };
 
@@ -196,44 +201,43 @@ export default function DocumentsPage() {
       await retryDocument(doc.id);
       refetch();
     } catch {
-      // error shown inline
+      // Error shown inline by the hook.
     }
   };
 
   return (
-    <div className="p-4 lg:p-8 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="w-4 h-px bg-accent" />
-        <span className="section-label text-[10px]">Documents</span>
-        <span className="text-muted text-[10px] font-mono">· N° 03</span>
+    <div className="mx-auto w-full max-w-6xl overflow-x-hidden p-4 lg:p-8">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-black/10 pb-5">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="h-px w-4 bg-accent" />
+            <span className="section-label text-[10px]">Documents</span>
+            <span className="font-mono text-[10px] text-muted">· N° 03</span>
+          </div>
+          <h1 className="font-display text-2xl font-medium tracking-tight">
+            Manage sources<span className="text-accent">.</span>
+          </h1>
+          <p className="mt-1 text-sm text-muted">View indexed files, crawler entries, and ingestion status.</p>
+        </div>
       </div>
-      <h1 className="text-2xl font-display font-medium tracking-tight mb-1">
-        Manage sources<span className="text-accent">.</span>
-      </h1>
-      <p className="text-sm text-muted mb-6">View indexed files, crawler entries, and ingestion status.</p>
 
-      {/* Stats */}
-      <div className="grid sm:grid-cols-3 gap-3 mb-6">
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { label: "PDF sources", value: pdfCount },
           { label: "SITE sources", value: siteCount },
           { label: "DB sources", value: dbCount },
         ].map((s) => (
           <div key={s.label} className="dash-stat-card">
-            <div className="text-[9px] font-mono text-muted tracking-widest uppercase mb-2">{s.label}</div>
-            <div className="text-2xl font-display font-medium leading-none mb-1">
-              {loading ? "—" : s.value}
-            </div>
+            <div className="mb-2 font-mono text-[9px] uppercase tracking-widest text-muted">{s.label}</div>
+            <div className="mb-1 font-display text-2xl font-medium leading-none">{loading ? "-" : s.value}</div>
             <div className="text-[10px] text-muted">indexed and searchable</div>
           </div>
         ))}
       </div>
 
-      {/* Error */}
       {error && (
-        <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-sm text-sm text-red-700">
-          {error} —{" "}
+        <div className="mb-4 border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}{" "}
           <button type="button" onClick={refetch} className="underline">
             retry
           </button>
@@ -241,31 +245,37 @@ export default function DocumentsPage() {
       )}
 
       {retryError && (
-        <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-sm text-sm text-red-700">
+        <div className="mb-4 border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           Retry failed: {retryError}
         </div>
       )}
 
-      {/* Documents list */}
-      <div className="border border-black/10 rounded-sm overflow-hidden bg-white/30">
-        <div className="hidden md:grid grid-cols-[minmax(180px,1fr)_64px_96px_76px_76px_76px_40px] gap-3 px-4 py-2.5 bg-black/[0.03] border-b border-black/10 text-[9px] font-mono text-muted tracking-widest uppercase">
-          <span>Name</span>
-          <span>Type</span>
-          <span>Status</span>
-          <span className="text-right">Chunks</span>
-          <span className="text-right">Updated</span>
-          <span className="text-right">Retry</span>
-          <span />
+      <section>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-serif italic text-accent">I.</span>
+              <span className="text-sm font-medium">Source registry</span>
+            </div>
+            <div className="mt-1 text-xs text-muted">
+              {loading ? "Checking sources..." : `${documents.length} sources tracked`}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center sm:flex sm:flex-wrap sm:justify-end sm:text-left">
+            <span className="dash-badge dash-badge-ok justify-center">Indexed {readyCount}</span>
+            <span className="dash-badge dash-badge-warn justify-center">Processing {processingCount}</span>
+            <span className="dash-badge dash-badge-err justify-center">Failed {failedCount}</span>
+          </div>
         </div>
 
         {loading && (
-          <div className="px-4 py-8 text-center text-sm text-muted font-mono tracking-wider">
-            Loading…
+          <div className="rounded-sm border border-black/10 px-4 py-10 text-center font-mono text-sm tracking-wider text-muted">
+            Loading...
           </div>
         )}
 
         {!loading && documents.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-muted">
+          <div className="rounded-sm border border-black/10 px-4 py-10 text-center text-sm text-muted">
             No documents yet.{" "}
             <a href="/dashboard/upload" className="text-accent underline">
               Upload one
@@ -274,66 +284,142 @@ export default function DocumentsPage() {
           </div>
         )}
 
-        {!loading &&
-          documents.map((doc) => (
-            <div
-              key={doc.id}
-              className="border-b border-black/[0.06] px-4 py-4 text-sm last:border-b-0 md:grid md:grid-cols-[minmax(180px,1fr)_64px_96px_76px_76px_76px_40px] md:items-center md:gap-3 md:py-3"
-            >
-              <div className="min-w-0 md:contents">
-                <div className="min-w-0">
-                  <span className="block break-words text-sm font-medium leading-5 md:truncate md:text-xs">{doc.title}</span>
-                  <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted md:hidden">
-                    Updated {formatDate(doc.updatedAt)}
-                  </span>
+        {!loading && documents.length > 0 && (
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <div className="min-w-[920px] overflow-hidden rounded-sm border border-black/10">
+                <div className="grid grid-cols-[1fr_90px_120px_80px_90px_130px] gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-2.5 font-mono text-[9px] uppercase tracking-widest text-muted">
+                  <span>Name</span>
+                  <span>Type</span>
+                  <span>Status</span>
+                  <span className="text-right">Chunks</span>
+                  <span className="text-right">Updated</span>
+                  <span className="text-right">Actions</span>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0 md:block">
-                  <TypeBadge type={sourceTypeLabel(doc.sourceType)} />
-                  <StatusBadge status={doc.status} />
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted md:contents">
-                  <span className="md:hidden">Chunks</span>
-                  <span className="text-right text-xs normal-case tracking-normal md:text-right md:font-mono md:text-muted">
-                    {doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "—"}
-                  </span>
-                  <span className="hidden text-right text-[10px] text-muted font-mono md:block">
-                    {formatDate(doc.updatedAt)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between gap-3 border-t border-black/[0.06] pt-3 md:mt-0 md:contents md:border-0 md:pt-0">
-                <span className="text-right md:block">
-                {doc.sourceType === "website" && doc.status === "failed" ? (
-                  <button
-                    type="button"
-                    onClick={() => handleRetry(doc)}
-                    disabled={retrying === doc.id}
-                    className="text-[10px] font-mono text-accent hover:underline disabled:opacity-50"
+                {documents.map((doc, i) => (
+                  <div
+                    key={doc.id}
+                    className={`grid grid-cols-[1fr_90px_120px_80px_90px_130px] gap-3 px-4 py-3 items-center text-sm transition-colors hover:bg-black/[0.02] ${i < documents.length - 1 ? "border-b border-black/[0.06]" : ""}`}
                   >
-                    {retrying === doc.id ? "Retrying…" : "Retry"}
-                  </button>
-                ) : (
-                  <span className="text-[10px] text-muted font-mono">—</span>
-                )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDoc(doc)}
-                  disabled={deleting === doc.id}
-                  className="text-muted hover:text-red-500 transition-colors text-[11px] font-mono"
-                  aria-label={`Delete ${doc.title}`}
-                >
-                  ✕
-                </button>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-foreground">{doc.title}</p>
+                      <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-widest text-muted">
+                        {documentSubtitle(doc)}
+                      </p>
+                    </div>
+                    <TypeBadge type={sourceTypeLabel(doc.sourceType)} sourceType={doc.sourceType} />
+                    <StatusBadge status={doc.status} />
+                    <span className="text-right font-mono text-xs text-muted">
+                      <ChunkValue doc={doc} />
+                    </span>
+                    <span className="text-right font-mono text-[10px] uppercase tracking-widest text-muted">
+                      {formatDate(doc.updatedAt)}
+                    </span>
+                    <div className="flex items-center justify-end gap-2">
+                      {doc.sourceType === "website" && doc.status === "failed" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRetry(doc)}
+                          disabled={retrying === doc.id}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-black/10 px-2.5 font-mono text-[10px] uppercase tracking-wider text-accent transition hover:border-accent hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Retry ${doc.title}`}
+                        >
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${retrying === doc.id ? "animate-spin" : ""}`}
+                            aria-hidden="true"
+                          />
+                          {retrying === doc.id ? "Retrying" : "Retry"}
+                        </button>
+                      ) : (
+                        <span className="font-mono text-[10px] text-muted">-</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDoc(doc)}
+                        disabled={deleting === doc.id}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-black/10 text-muted transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Delete ${doc.title}`}
+                        title="Delete source"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-      </div>
 
-      {/* Delete confirmation */}
+            <div className="grid gap-2 lg:hidden">
+              {documents.map((doc) => (
+                <article key={doc.id} className="rounded-sm border border-black/10 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="break-words text-xs font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                        {doc.title}
+                      </h2>
+                      <p className="mt-1 break-words font-mono text-[9px] uppercase tracking-widest text-muted [overflow-wrap:anywhere]">
+                        {documentSubtitle(doc)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDoc(doc)}
+                      disabled={deleting === doc.id}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-black/10 text-muted transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Delete ${doc.title}`}
+                      title="Delete source"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <dt className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-muted">Type</dt>
+                      <dd>
+                        <TypeBadge type={sourceTypeLabel(doc.sourceType)} sourceType={doc.sourceType} />
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-muted">Status</dt>
+                      <dd>
+                        <StatusBadge status={doc.status} />
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-muted">Chunks</dt>
+                      <dd className="font-mono text-xs">
+                        <ChunkValue doc={doc} />
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-muted">Updated</dt>
+                      <dd className="font-mono text-xs uppercase tracking-[0.14em] text-muted">{formatDate(doc.updatedAt)}</dd>
+                    </div>
+                  </dl>
+
+                  {doc.sourceType === "website" && doc.status === "failed" && (
+                    <button
+                      type="button"
+                      onClick={() => handleRetry(doc)}
+                      disabled={retrying === doc.id}
+                      className="mt-4 inline-flex h-9 w-full items-center justify-center gap-2 rounded-sm border border-black/10 font-mono text-[10px] uppercase tracking-wider text-accent transition hover:border-accent hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${retrying === doc.id ? "animate-spin" : ""}`}
+                        aria-hidden="true"
+                      />
+                      {retrying === doc.id ? "Retrying" : "Retry source"}
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
       {confirmDoc && (
         <DeleteConfirm
           doc={confirmDoc}
