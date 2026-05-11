@@ -269,6 +269,44 @@ function mergeHybridChunks(vectorChunks: ScoredRetrievedChunk[], keywordChunks: 
     .slice(0, topK);
 }
 
+function mergeBookAndStandardCandidates(
+  bookChunks: RetrievedChunk[],
+  standardChunks: RetrievedChunk[],
+  topK: number,
+  summaryQuery: boolean,
+): RetrievedChunk[] {
+  const seen = new Set<string>();
+  const uniqueBook = bookChunks.filter((chunk) => {
+    if (seen.has(chunk.chunkId)) return false;
+    seen.add(chunk.chunkId);
+    return true;
+  });
+
+  const uniqueStandard = standardChunks.filter((chunk) => {
+    if (seen.has(chunk.chunkId)) return false;
+    seen.add(chunk.chunkId);
+    return true;
+  });
+
+  if (uniqueStandard.length === 0) return uniqueBook.slice(0, topK);
+  if (uniqueBook.length === 0) return uniqueStandard.slice(0, topK);
+
+  const standardSlots = summaryQuery
+    ? Math.min(uniqueStandard.length, Math.max(1, Math.floor(topK * 0.25)))
+    : Math.min(uniqueStandard.length, Math.max(1, Math.floor(topK * 0.35)));
+  const bookSlots = Math.max(1, topK - standardSlots);
+  const selected = [
+    ...uniqueBook.slice(0, bookSlots),
+    ...uniqueStandard.slice(0, standardSlots),
+  ];
+  const selectedIds = new Set(selected.map((chunk) => chunk.chunkId));
+  const remainder = [...uniqueBook, ...uniqueStandard]
+    .filter((chunk) => !selectedIds.has(chunk.chunkId))
+    .sort((a, b) => b.score - a.score);
+
+  return [...selected, ...remainder].slice(0, topK);
+}
+
 export type RetrieveRelevantChunksInput = {
   supabase: SupabaseClient;
   userId: string;
@@ -316,10 +354,7 @@ export async function retrieveRelevantChunks(input: RetrieveRelevantChunksInput)
         // Standard retrieval failure is OK if book retrieval succeeded
       }
 
-      // Merge: book chunks first (they have richer context), then standard chunks
-      const bookChunkIds = new Set(bookResult.chunks.map((c) => c.chunkId));
-      const uniqueStandard = standardChunks.filter((c) => !bookChunkIds.has(c.chunkId));
-      chunks = [...bookResult.chunks, ...uniqueStandard].slice(0, topK);
+      chunks = mergeBookAndStandardCandidates(bookResult.chunks, standardChunks, topK, summaryQuery);
 
       if (chunks.length > 0) return chunks;
     }

@@ -1,6 +1,8 @@
 import { constants } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
+import { isIP } from "node:net";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { stripHtml } from "@/lib/rag/ingestion";
 import { ragServices } from "@/lib/rag/services";
@@ -20,6 +22,36 @@ export function isValidHttpUrl(raw: string): boolean {
   }
 }
 
+function isBlockedIpAddress(value: string): boolean {
+  const normalized = value.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedIpv4) return isBlockedIpAddress(mappedIpv4[1]);
+
+  if (isIP(normalized) === 4) {
+    const octets = normalized.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return true;
+    const [a, b] = octets;
+
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && (b === 0 || b === 168)) return true;
+    if (a === 198 && (b === 18 || b === 19 || b === 51)) return true;
+    if (a === 203 && b === 0) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+
+  if (isIP(normalized) === 6) {
+    if (normalized === "::" || normalized === "::1") return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:")) return true;
+    return false;
+  }
+
+  return false;
+}
+
 export function isBlockedPrivateUrl(raw: string): boolean {
   let hostname: string;
   try {
@@ -30,20 +62,8 @@ export function isBlockedPrivateUrl(raw: string): boolean {
   const normalized = hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase();
 
   // Exact matches
-  if (normalized === "localhost" || normalized === "::1" || normalized === "0.0.0.0") return true;
-
-  // IPv4 private/reserved ranges
-  const ipv4Prefixes = ["127.", "0.", "169.254.", "10.", "192.168."];
-  if (ipv4Prefixes.some((p) => normalized.startsWith(p))) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
-
-  // IPv6 private/reserved (only check when hostname contains ":" indicating IPv6)
-  if (normalized.includes(":")) {
-    const ipv6Prefixes = ["fc", "fd", "fe80:", "::ffff:127.", "::ffff:10.", "::ffff:192.168.", "::ffff:0."];
-    if (ipv6Prefixes.some((p) => normalized.startsWith(p))) return true;
-    // IPv6-mapped 172.16-31.x.x
-    if (/^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
-  }
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  if (isBlockedIpAddress(normalized)) return true;
 
   return false;
 }
@@ -110,9 +130,17 @@ export function extractWebsiteText(html: string): string {
   throw new Error("Could not extract meaningful text from the website (page may be empty, JavaScript-rendered, or require authentication)");
 }
 
-function assertPublicHttpUrl(raw: string) {
+async function assertPublicHttpUrl(raw: string) {
   if (!isValidHttpUrl(raw) || isBlockedPrivateUrl(raw)) {
     throw new Error("URL points to a private, reserved, or non-http address");
+  }
+
+  const hostname = new URL(raw).hostname.replace(/^\[(.*)\]$/, "$1");
+  if (isIP(hostname)) return;
+
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0 || addresses.some((address) => isBlockedIpAddress(address.address))) {
+    throw new Error("URL resolves to a private or reserved address");
   }
 }
 
@@ -122,18 +150,14 @@ function getFetchFailureCode(error: unknown): string | undefined {
   return cause?.code;
 }
 
-function requestWithNodeHttp(
+async function requestWithNodeHttp(
   url: string,
   allowLegacyTls = false,
   redirectCount = 0,
 ): Promise<{ status: number; text: string; finalUrl: string }> {
+  await assertPublicHttpUrl(url);
+
   return new Promise((resolve, reject) => {
-    try {
-      assertPublicHttpUrl(url);
-    } catch (error) {
-      reject(error);
-      return;
-    }
     const parsed = new URL(url);
     const isHttps = parsed.protocol === "https:";
     const client = isHttps ? https : http;
@@ -158,12 +182,6 @@ function requestWithNodeHttp(
           const nextUrl = new URL(location, parsed).toString();
           if (redirectCount >= MAX_REDIRECTS) {
             reject(new Error("Website redirected too many times"));
-            return;
-          }
-          try {
-            assertPublicHttpUrl(nextUrl);
-          } catch (error) {
-            reject(error);
             return;
           }
           requestWithNodeHttp(nextUrl, allowLegacyTls, redirectCount + 1).then(resolve).catch(reject);
@@ -193,7 +211,7 @@ function assertSuccessfulWebsiteResponse(status: number, finalUrl: string) {
 
 export async function fetchWebsiteHtml(url: string): Promise<string> {
   try {
-    assertPublicHttpUrl(url);
+    await assertPublicHttpUrl(url);
     const pageResponse = await fetch(url, {
       redirect: "manual",
       headers: {
@@ -208,7 +226,7 @@ export async function fetchWebsiteHtml(url: string): Promise<string> {
       const location = pageResponse.headers.get("location");
       if (!location) throw new Error(`Website returned ${pageResponse.status}`);
       const redirectedUrl = new URL(location, url).toString();
-      assertPublicHttpUrl(redirectedUrl);
+      await assertPublicHttpUrl(redirectedUrl);
       const redirectedResponse = await requestWithNodeHttp(redirectedUrl);
       assertSuccessfulWebsiteResponse(redirectedResponse.status, redirectedResponse.finalUrl);
       return redirectedResponse.text;

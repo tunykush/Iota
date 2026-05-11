@@ -36,6 +36,7 @@ export function useChat(initialConversationId?: string | null) {
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const suppressNextHistoryLoadRef = useRef<string | null>(null);
 
   useEffect(() => {
     setConversationId(initialConversationId ?? null);
@@ -48,6 +49,12 @@ export function useChat(initialConversationId?: string | null) {
   // Load existing conversation messages on mount / id change
   useEffect(() => {
     if (!conversationId) {
+      setLoadingHistory(false);
+      return;
+    }
+
+    if (suppressNextHistoryLoadRef.current === conversationId) {
+      suppressNextHistoryLoadRef.current = null;
       setLoadingHistory(false);
       return;
     }
@@ -169,7 +176,9 @@ export function useChat(initialConversationId?: string | null) {
             switch (parsed.type) {
               case "init":
                 if (!conversationId && parsed.conversationId) {
-                  setConversationId(parsed.conversationId as string);
+                  const nextConversationId = parsed.conversationId as string;
+                  suppressNextHistoryLoadRef.current = nextConversationId;
+                  setConversationId(nextConversationId);
                 }
                 break;
               case "status":
@@ -195,6 +204,7 @@ export function useChat(initialConversationId?: string | null) {
                 break;
               case "persisted":
                 persistedId = parsed.messageId as string | undefined;
+                window.dispatchEvent(new Event("iota:chats-changed"));
                 break;
               case "error":
                 throw new Error((parsed.error as string) ?? "Stream failed");
@@ -250,6 +260,7 @@ export function useChat(initialConversationId?: string | null) {
   );
 
   const reset = useCallback(() => {
+    suppressNextHistoryLoadRef.current = null;
     setConversationId(null);
     setMessages([]);
     setError(null);
@@ -264,6 +275,7 @@ export function useChat(initialConversationId?: string | null) {
     setError(null);
     try {
       await chatApi.deleteConversation(conversationId);
+      suppressNextHistoryLoadRef.current = null;
       setConversationId(null);
       setMessages([]);
       return true;

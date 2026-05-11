@@ -211,6 +211,7 @@ export default function UploadPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const { job } = useJobPolling(activeJobId, 1500);
   const [demoJob, setDemoJob] = useState<IngestionJob | null>(null);
+  const demoJobSeedRef = useRef<IngestionJob | null>(null);
   // Optimistic job shown immediately when user clicks Upload (before API responds)
   const [optimisticJob, setOptimisticJob] = useState<IngestionJob | null>(null);
 
@@ -246,6 +247,7 @@ export default function UploadPage() {
   // Called immediately when user clicks "Upload PDF" — before the API call finishes
   const handleUploadBegin = useCallback(() => {
     const startedAt = new Date().toISOString();
+    demoJobSeedRef.current = null;
     setDemoJob(null);
     setActiveJobId(null);
     prevStatusRef.current = null;
@@ -284,7 +286,7 @@ export default function UploadPage() {
   }, [optimisticJob?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleJobStart = (jobId: string) => {
-    // Real job ID received — switch to polling; optimistic job will be cleared by the effect above
+    demoJobSeedRef.current = null;
     setDemoJob(null);
     prevStatusRef.current = null;
     setActiveJobId(jobId);
@@ -292,9 +294,7 @@ export default function UploadPage() {
 
   const handleDemoPipeline = () => {
     const startedAt = new Date().toISOString();
-    setActiveJobId(null);
-    setOptimisticJob(null);
-    setDemoJob({
+    const nextDemoJob: IngestionJob = {
       id: `demo-${Date.now()}`,
       documentId: "demo-blueprint-source",
       status: "queued",
@@ -302,20 +302,27 @@ export default function UploadPage() {
       startedAt,
       totalChunks: 24,
       embeddedChunks: 0,
-    });
+    };
+    setActiveJobId(null);
+    setOptimisticJob(null);
+    demoJobSeedRef.current = nextDemoJob;
+    setDemoJob(nextDemoJob);
   };
 
+  const demoJobId = demoJob?.id;
   useEffect(() => {
-    if (!demoJob) return;
+    if (!demoJobId) return;
+    const baseJob = demoJobSeedRef.current;
+    if (!baseJob || baseJob.id !== demoJobId) return;
 
     const timeline: IngestionJob[] = [
-      { ...demoJob, status: "queued", stage: undefined, embeddedChunks: 0 },
-      { ...demoJob, status: "running", stage: "extracting", embeddedChunks: 0 },
-      { ...demoJob, status: "running", stage: "chunking", embeddedChunks: 0 },
-      { ...demoJob, status: "running", stage: "embedding", embeddedChunks: 8 },
-      { ...demoJob, status: "running", stage: "embedding", embeddedChunks: 18 },
-      { ...demoJob, status: "running", stage: "storing", embeddedChunks: 24 },
-      { ...demoJob, status: "succeeded", stage: "storing", embeddedChunks: 24, completedAt: new Date().toISOString() },
+      { ...baseJob, status: "queued", stage: undefined, embeddedChunks: 0 },
+      { ...baseJob, status: "running", stage: "extracting", embeddedChunks: 0 },
+      { ...baseJob, status: "running", stage: "chunking", embeddedChunks: 0 },
+      { ...baseJob, status: "running", stage: "embedding", embeddedChunks: 8 },
+      { ...baseJob, status: "running", stage: "embedding", embeddedChunks: 18 },
+      { ...baseJob, status: "running", stage: "storing", embeddedChunks: 24 },
+      { ...baseJob, status: "succeeded", stage: "storing", embeddedChunks: 24, completedAt: new Date().toISOString() },
     ];
 
     let index = 0;
@@ -329,7 +336,7 @@ export default function UploadPage() {
     }, 1050);
 
     return () => window.clearInterval(timer);
-  }, [demoJob?.id]);
+  }, [demoJobId]);
 
   const pipelineJob = optimisticJob ?? demoJob ?? (activeJobId ? job : null);
 

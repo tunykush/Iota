@@ -189,6 +189,30 @@ function hashContent(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return String(error);
+}
+
+function isBookSchemaUnavailable(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  const mentionsBookSchema = /book_structures|book_chapters|book_entities|chunk_type|chapter_number|section_depth|position_in_book|chapter_id/i.test(message);
+  const isSchemaError = /schema cache|relation .* does not exist|column .* does not exist|could not find|unknown column/i.test(message);
+  return mentionsBookSchema && isSchemaError;
+}
+
+async function cleanupBookMetadataRows(input: Pick<IngestDocumentInput, "supabase" | "userId" | "documentId">) {
+  await Promise.allSettled([
+    input.supabase.from("book_entities").delete().eq("document_id", input.documentId).eq("user_id", input.userId),
+    input.supabase.from("book_chapters").delete().eq("document_id", input.documentId).eq("user_id", input.userId),
+    input.supabase.from("book_structures").delete().eq("document_id", input.documentId).eq("user_id", input.userId),
+  ]);
+}
+
 function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
@@ -404,6 +428,11 @@ export async function ingestDocumentSmart(input: IngestDocumentInput): Promise<{
     .single();
 
   if (bsError) {
+    if (isBookSchemaUnavailable(bsError)) {
+      console.warn("[Book RAG] Book schema unavailable; falling back to standard ingestion.");
+      const count = await ingestDocumentText(input);
+      return { count, mode: "standard" };
+    }
     console.warn(`[Book RAG] Failed to persist book_structures (non-fatal): ${bsError.message}`);
   }
   const bookStructureId = bookStructureRow?.id ?? null;
@@ -430,6 +459,12 @@ export async function ingestDocumentSmart(input: IngestDocumentInput): Promise<{
       .select("id, chapter_number");
 
     if (chError) {
+      if (isBookSchemaUnavailable(chError)) {
+        console.warn("[Book RAG] Book schema unavailable; falling back to standard ingestion.");
+        await cleanupBookMetadataRows(input);
+        const count = await ingestDocumentText(input);
+        return { count, mode: "standard" };
+      }
       console.warn(`[Book RAG] Failed to persist book_chapters (non-fatal): ${chError.message}`);
     } else if (chapterData) {
       for (const row of chapterData) {
@@ -462,16 +497,27 @@ export async function ingestDocumentSmart(input: IngestDocumentInput): Promise<{
   }));
 
   // ── Step 4: Ingest chunks with book-specific columns ──
-  const count = await ingestBookChunks({
-    ...input,
-    chunks: bookChunks,
-    metadata: {
-      ...(input.metadata ?? {}),
-      bookRag: true,
-      bookStructureId,
-      bookStats: bookResult.stats,
-    },
-  });
+  let count: number;
+  try {
+    count = await ingestBookChunks({
+      ...input,
+      chunks: bookChunks,
+      metadata: {
+        ...(input.metadata ?? {}),
+        bookRag: true,
+        bookStructureId,
+        bookStats: bookResult.stats,
+      },
+    });
+  } catch (error) {
+    if (isBookSchemaUnavailable(error)) {
+      console.warn("[Book RAG] Book chunk columns unavailable; falling back to standard ingestion.");
+      await cleanupBookMetadataRows(input);
+      const fallbackCount = await ingestDocumentText(input);
+      return { count: fallbackCount, mode: "standard" };
+    }
+    throw error;
+  }
 
   // ── Step 5: Extract and persist entities (best-effort, non-blocking) ──
   try {

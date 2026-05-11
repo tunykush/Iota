@@ -118,7 +118,12 @@ function getDefaultRagChatMode(): ChatGenerationMode {
 }
 
 function resolveRagChatMode(mode?: ChatGenerationMode): ChatGenerationMode {
-  return mode ?? getDefaultRagChatMode();
+  return mode === "auto" || mode === "llm" || mode === "local" ? mode : getDefaultRagChatMode();
+}
+
+function resolveRequestedTopK(topK?: number): number {
+  if (typeof topK !== "number" || !Number.isFinite(topK)) return 5;
+  return Math.max(1, Math.min(20, Math.floor(topK)));
 }
 
 function shouldUseAgenticRag() {
@@ -463,7 +468,7 @@ export async function runHybridRagChat(input: {
   documentIds?: string[];
   mode?: ChatGenerationMode;
 }): Promise<RagChatResult> {
-  const requestedTopK = input.topK ?? 5;
+  const requestedTopK = resolveRequestedTopK(input.topK);
   const candidateTopK = Math.min(Math.max(requestedTopK * 2, 8), 20);
   const agenticEnabled = shouldUseAgenticRag();
   const retrievalResult = agenticEnabled
@@ -664,12 +669,14 @@ export async function* streamHybridRagChat(input: {
   message: string;
   topK?: number;
   documentIds?: string[];
+  mode?: ChatGenerationMode;
 }): AsyncGenerator<string, void, unknown> {
   // 0. Emit retrieving status immediately so frontend shows progress
   yield `data: ${JSON.stringify({ type: "status", status: "retrieving" })}\n\n`;
 
   // 1. Retrieve context (non-streaming, fast)
-  const requestedTopK = input.topK ?? 5;
+  const requestedTopK = resolveRequestedTopK(input.topK);
+  const chatMode = resolveRagChatMode(input.mode);
   const candidateTopK = Math.min(Math.max(requestedTopK * 2, 8), 20);
   const agenticEnabled = shouldUseAgenticRag();
   const retrievalResult = agenticEnabled
@@ -722,6 +729,14 @@ export async function* streamHybridRagChat(input: {
   // 2. Emit sources immediately so frontend can show them
   yield `data: ${JSON.stringify({ type: "sources", sources })}\n\n`;
 
+  if (chatMode === "local") {
+    const extractive = buildExtractiveAnswer(input.message, chunks);
+    yield `data: ${JSON.stringify({ type: "delta", delta: extractive })}\n\n`;
+    yield `data: ${JSON.stringify({ type: "done", provider: "extractive", model: "local-retrieval-forced" })}\n\n`;
+    yield `data: ${JSON.stringify({ type: "complete", content: extractive })}\n\n`;
+    return;
+  }
+
   // 3. Build messages — procedure-specific or standard
   const isProcedure = answerMode === "procedure" && procedureRequirements !== null;
   let messages;
@@ -758,7 +773,8 @@ export async function* streamHybridRagChat(input: {
         yield `data: ${JSON.stringify({ type: "done", provider: chunk.provider, model: chunk.model })}\n\n`;
       }
     }
-  } catch {
+  } catch (error) {
+    if (chatMode === "llm") throw error;
     // Fallback to extractive if streaming fails
     const extractive = buildExtractiveAnswer(input.message, chunks);
     yield `data: ${JSON.stringify({ type: "delta", delta: extractive })}\n\n`;

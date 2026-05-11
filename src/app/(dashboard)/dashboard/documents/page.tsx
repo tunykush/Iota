@@ -1,12 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Database, FileText, Globe2, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useDocuments, useDeleteDocument, useRetryDocumentIngestion } from "@/hooks/useDocuments";
 import type { Document, DocumentSourceType, DocumentStatus } from "@/lib/api/types";
 
 // ─── Helpers ───────────────────────────────────────────────────
 function sourceTypeLabel(t: DocumentSourceType): string {
   return t === "pdf" ? "PDF" : t === "website" ? "SITE" : "DB";
+}
+
+function sourceTypeIcon(t: DocumentSourceType) {
+  if (t === "pdf") return <FileText className="h-3.5 w-3.5" aria-hidden="true" />;
+  if (t === "website") return <Globe2 className="h-3.5 w-3.5" aria-hidden="true" />;
+  return <Database className="h-3.5 w-3.5" aria-hidden="true" />;
 }
 
 function formatDate(iso: string): string {
@@ -24,20 +31,32 @@ function StatusBadge({ status }: { status: DocumentStatus }) {
     processing: "processing",
     failed: "failed",
   };
+  const icon: Record<DocumentStatus, React.ReactNode> = {
+    ready: <CheckCircle2 className="h-3 w-3" aria-hidden="true" />,
+    processing: <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />,
+    failed: <AlertTriangle className="h-3 w-3" aria-hidden="true" />,
+  };
   return (
-    <span className={`dash-badge ${map[status]}`}>
-      {status === "processing" && (
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1" />
-      )}
+    <span className={`dash-badge inline-flex h-7 items-center gap-1.5 ${map[status]}`}>
+      {icon[status]}
       {label[status]}
     </span>
   );
 }
 
-function TypeBadge({ type }: { type: string }) {
+function TypeBadge({ type, sourceType }: { type: string; sourceType: DocumentSourceType }) {
   return (
-    <span className="text-[9px] font-mono tracking-wider text-muted border border-black/10 px-1.5 py-0.5 rounded-sm w-fit">
+    <span className="inline-flex h-7 w-fit items-center gap-1.5 border border-black/10 bg-white/35 px-2 font-mono text-[9px] uppercase tracking-wider text-muted">
+      {sourceTypeIcon(sourceType)}
       {type}
+    </span>
+  );
+}
+
+function ChunkValue({ doc }: { doc: Document }) {
+  return (
+    <span className={doc.chunkCount > 0 ? "text-foreground" : "text-muted"}>
+      {doc.chunkCount > 0 ? doc.chunkCount.toLocaleString() : "-"}
     </span>
   );
 }

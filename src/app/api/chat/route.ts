@@ -9,9 +9,18 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const MAX_MESSAGE_LENGTH = 32_000;
+const DEFAULT_TOP_K = 5;
+const MIN_TOP_K = 1;
+const MAX_TOP_K = 20;
 
 function autoTitle(message: string): string {
   return message.length > 60 ? `${message.slice(0, 57)}...` : message;
+}
+
+function parseTopK(value: unknown): number | null {
+  if (value == null) return DEFAULT_TOP_K;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < MIN_TOP_K || value > MAX_TOP_K) return null;
+  return value;
 }
 
 function classifyChatError(error: unknown) {
@@ -55,7 +64,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { message, conversationId, topK = 5, documentIds, mode } = body;
+  const { message, conversationId, documentIds, mode } = body;
+  const topK = parseTopK(body.topK);
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return NextResponse.json(
@@ -67,6 +77,13 @@ export async function POST(request: NextRequest) {
   if (message.length > MAX_MESSAGE_LENGTH) {
     return NextResponse.json(
       { error: { code: "VALIDATION_ERROR", message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`, details: [{ field: "message", message: "Message too long" }] } },
+      { status: 400 },
+    );
+  }
+
+  if (topK == null) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: `Field 'topK' must be an integer between ${MIN_TOP_K} and ${MAX_TOP_K}`, details: [{ field: "topK", message: "Invalid retrieval size" }] } },
       { status: 400 },
     );
   }
