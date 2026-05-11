@@ -260,7 +260,7 @@ export async function retrieveBookChunks2Phase(input: BookRetrievalInput): Promi
     };
   }
 
-  let detailChunks = ((detailData ?? []) as DetailChunkRow[]).map(detailRowToChunk);
+  const detailChunks = ((detailData ?? []) as DetailChunkRow[]).map(detailRowToChunk);
 
   // ── Entity-aware retrieval ──
   const entityMatches: string[] = [];
