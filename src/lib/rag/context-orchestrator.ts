@@ -1,4 +1,5 @@
 import type { RetrievedChunk } from "./retrieval";
+import { enrichChunksWithBookContext, hasBookContent, buildBookChunkContextText, type BookEnrichedChunk } from "./book-retrieval";
 
 export type ContextOrchestratorSettings = {
   enabled: boolean;
@@ -146,6 +147,20 @@ export function orchestrateContext(input: {
   if (settings.enabled && settings.contextCompression) {
     const perChunkBudget = Math.max(900, Math.floor(settings.maxContextChars / Math.max(chunks.length, 1)));
     chunks = chunks.map((chunk) => compressChunk(input.query, chunk, perChunkBudget));
+  }
+
+  // ── Book RAG enrichment ──
+  // If chunks contain book-structured content, enrich them with hierarchy context
+  if (hasBookContent(chunks)) {
+    const enriched = enrichChunksWithBookContext(chunks);
+    chunks = enriched.map((chunk) => {
+      const bookChunk = chunk as BookEnrichedChunk;
+      if (bookChunk.bookMetadata) {
+        // Inject chapter context into the chunk text so the LLM sees it
+        return { ...chunk, text: buildBookChunkContextText(bookChunk) };
+      }
+      return chunk;
+    });
   }
 
   const supports = chunks.map((chunk) => supportScore(queryTokens, chunk));

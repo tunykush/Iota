@@ -3,7 +3,7 @@ import type { ChatGenerationMode } from "@/lib/api/types";
 import { embedTexts, getEmbeddingModelMetadata, type EmbeddingModelMetadata } from "@/lib/embeddings";
 import { generateWithFallback } from "@/lib/llm/router";
 import type { LlmGenerateRequest, LlmRouterResult } from "@/lib/llm/types";
-import { ingestDocumentChunks, type IngestDocumentChunksInput, type IngestDocumentInput, ingestDocumentText, markIngestionFailed, type MarkIngestionFailedInput } from "./ingestion";
+import { ingestDocumentChunks, type IngestDocumentChunksInput, type IngestDocumentInput, ingestDocumentText, ingestDocumentSmart, markIngestionFailed, type MarkIngestionFailedInput } from "./ingestion";
 import { retrieveRelevantChunks, type RetrievedChunk, type RetrieveRelevantChunksInput } from "./retrieval";
 import { runHybridRagChat, type RagChatResult } from "./chat";
 
@@ -23,6 +23,7 @@ export type RetrievalService = {
 export type IngestionService = {
   ingestDocumentChunks(input: IngestDocumentChunksInput): Promise<number>;
   ingestDocumentText(input: IngestDocumentInput): Promise<number>;
+  ingestDocumentSmart(input: IngestDocumentInput): Promise<{ count: number; mode: "book" | "standard" }>;
   markFailed(input: MarkIngestionFailedInput): Promise<void>;
 };
 
@@ -74,6 +75,10 @@ export class IotaDocumentIngestionService implements IngestionService {
 
   ingestDocumentText(input: IngestDocumentInput) {
     return ingestDocumentText(input);
+  }
+
+  ingestDocumentSmart(input: IngestDocumentInput) {
+    return ingestDocumentSmart(input);
   }
 
   markFailed(input: MarkIngestionFailedInput) {

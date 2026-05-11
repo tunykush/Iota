@@ -1,5 +1,6 @@
 import type { LlmMessage } from "@/lib/llm/types";
 import type { RetrievedChunk } from "./retrieval";
+import { hasBookContent, getBookStructureSummary, type BookEnrichedChunk } from "./book-retrieval";
 
 const SYSTEM_PROMPT = `You are a senior Vietnamese RAG answer writer for a private knowledge-base chat app.
 
@@ -66,12 +67,35 @@ ${chunk.text}`;
   return parts.join("\n\n");
 }
 
+const BOOK_RAG_ADDENDUM = `
+
+### Book-Structured Content Rules
+When CONTEXT contains book-structured chunks (marked with 📖 hierarchy paths like "Ch.3: Title → Section → (detail)"):
+1. **Use the hierarchy**: Reference chapters and sections by name. E.g. "Theo Chương 3 về X..." or "In Chapter 5, Section 2..."
+2. **Respect structure**: If multiple chunks come from the same chapter, synthesize them coherently rather than treating them as independent sources.
+3. **Navigate the book**: If the user asks about a topic, explain where in the book it's covered (chapter/section).
+4. **Summary vs Detail**: Summary chunks give overview; detail chunks give specifics. Use both when available.
+5. **Cross-reference**: If related content appears in different chapters, mention the connections.
+6. **Position awareness**: Earlier chapters often provide foundations; later chapters build on them. Respect this flow.`;
+
 export function buildRagMessages(question: string, chunks: RetrievedChunk[]): LlmMessage[] {
+  const isBook = hasBookContent(chunks);
+  const systemContent = isBook ? `${SYSTEM_PROMPT}${BOOK_RAG_ADDENDUM}` : SYSTEM_PROMPT;
+
+  // For book content, prepend a structure summary if available
+  let contextPrefix = "";
+  if (isBook) {
+    const structureSummary = getBookStructureSummary(chunks as BookEnrichedChunk[]);
+    if (structureSummary) {
+      contextPrefix = `BOOK STRUCTURE:\n${structureSummary}\n\n`;
+    }
+  }
+
   return [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemContent },
     {
       role: "user",
-      content: `CONTEXT:\n${formatContext(chunks)}\n\nUSER QUESTION:\n${question}\n\nUse the most relevant sources first. Answer from the CONTEXT above in a natural conversation style. Be detailed when evidence exists. Include the relevant PDF/source wording directly in the answer under "Trích đoạn từ tài liệu" instead of hiding evidence only in citations.`,
+      content: `${contextPrefix}CONTEXT:\n${formatContext(chunks)}\n\nUSER QUESTION:\n${question}\n\nUse the most relevant sources first. Answer from the CONTEXT above in a natural conversation style. Be detailed when evidence exists. Include the relevant PDF/source wording directly in the answer under "Trích đoạn từ tài liệu" instead of hiding evidence only in citations.`,
     },
   ];
 }

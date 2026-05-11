@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatSource } from "@/lib/api/types";
 import { embedTexts } from "@/lib/embeddings";
 import { planContextQueries } from "./context-orchestrator";
+import { retrieveBookChunks2Phase } from "./book-retrieval-2phase";
 
 export type RetrievedChunk = ChatSource & {
   text: string;
@@ -283,6 +284,51 @@ export async function retrieveRelevantChunks(input: RetrieveRelevantChunksInput)
   const retrievalQuery = planContextQueries(input.query).join(" ");
   let chunks: RetrievedChunk[] = [];
 
+  // ── Try 2-phase Book RAG retrieval first ──
+  // If the user's documents contain book-structured content, use the specialized
+  // 2-phase retrieval (summary → detail) for better results.
+  try {
+    const bookResult = await retrieveBookChunks2Phase({
+      supabase: input.supabase,
+      userId: input.userId,
+      query: input.query,
+      topK,
+      documentIds: input.documentIds,
+    });
+
+    if (bookResult && bookResult.chunks.length > 0) {
+      console.log(`[Book RAG] 2-phase retrieval: ${bookResult.chunks.length} chunks from chapters [${bookResult.phase1Chapters.join(", ")}]${bookResult.entityMatches.length > 0 ? `, entities: [${bookResult.entityMatches.join(", ")}]` : ""}`);
+
+      // If book retrieval found enough results, use them
+      // But also run standard retrieval to catch non-book documents
+      let standardChunks: RetrievedChunk[] = [];
+      try {
+        if (summaryQuery) {
+          standardChunks = await retrieveKeywordChunks({ ...input, query: retrievalQuery, topK: Math.min(topK, 5) });
+        } else {
+          const [vectorChunks, keywordChunks] = await Promise.all([
+            retrieveVectorChunks({ ...input, query: retrievalQuery, topK: Math.min(topK, 5) }),
+            retrieveKeywordChunks({ ...input, query: retrievalQuery, topK: Math.min(topK, 5) }),
+          ]);
+          standardChunks = mergeHybridChunks(vectorChunks, keywordChunks, Math.min(topK, 5));
+        }
+      } catch {
+        // Standard retrieval failure is OK if book retrieval succeeded
+      }
+
+      // Merge: book chunks first (they have richer context), then standard chunks
+      const bookChunkIds = new Set(bookResult.chunks.map((c) => c.chunkId));
+      const uniqueStandard = standardChunks.filter((c) => !bookChunkIds.has(c.chunkId));
+      chunks = [...bookResult.chunks, ...uniqueStandard].slice(0, topK);
+
+      if (chunks.length > 0) return chunks;
+    }
+  } catch (bookError) {
+    // Book retrieval failed — fall through to standard retrieval
+    console.warn(`[Book RAG] 2-phase retrieval failed (falling back to standard): ${bookError instanceof Error ? bookError.message : "unknown"}`);
+  }
+
+  // ── Standard retrieval (unchanged) ──
   if (summaryQuery) {
     chunks = await retrieveKeywordChunks({ ...input, query: retrievalQuery, topK });
   } else try {

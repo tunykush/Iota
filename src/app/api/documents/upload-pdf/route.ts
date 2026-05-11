@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PDFParse } from "pdf-parse";
 import type { UploadPdfResponse } from "@/lib/api/types";
-import { chunkTextWithPageNumber } from "@/lib/rag/ingestion";
+// chunkTextWithPageNumber no longer needed — ingestDocumentSmart handles chunking internally
 import { ragServices } from "@/lib/rag/services";
 import { createClient } from "@/lib/supabase/server";
 
@@ -143,20 +143,25 @@ export async function POST(request: NextRequest) {
   }
 
   let chunkCount = 0;
+  let ingestionMode: "book" | "standard" = "standard";
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const pages = await extractPdfPages(bytes);
-    const chunks = pages.flatMap((page) => chunkTextWithPageNumber(page.text, page.num));
+    const fullText = pages.map((p) => p.text).join("\n\n");
+    const baseMeta = { filename: file.name, size: file.size, extractionMode: "pdf-parse", pageCount: pages.length };
 
-    chunkCount = await ragServices.ingestion.ingestDocumentChunks({
+    // Use smart ingestion: auto-detects books vs standard documents
+    const smartResult = await ragServices.ingestion.ingestDocumentSmart({
       supabase,
       userId: user.id,
       documentId: document.id,
       jobId: job.id,
       sourceType: "pdf",
-      chunks,
-      metadata: { filename: file.name, size: file.size, extractionMode: "pdf-parse", pageCount: pages.length },
+      text: fullText,
+      metadata: baseMeta,
     });
+    chunkCount = smartResult.count;
+    ingestionMode = smartResult.mode;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to ingest PDF";
     await ragServices.ingestion.markFailed({
@@ -184,5 +189,5 @@ export async function POST(request: NextRequest) {
     job: { id: job.id, status: "succeeded" },
   };
 
-  return NextResponse.json({ ...body, chunkCount }, { status: 201 });
+  return NextResponse.json({ ...body, chunkCount, ingestionMode }, { status: 201 });
 }

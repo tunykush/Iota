@@ -3,6 +3,8 @@ import type { ChatGenerationMode, ChatSource } from "@/lib/api/types";
 import { generateWithFallback, streamWithFallback } from "@/lib/llm/router";
 import { chooseRuleBasedTools, reflectAndImproveAnswer, retrieveAgenticContext, runCollaborativeRagAgents, runRagTool, runToolUseRagAgent, type AgenticRagTrace, type RagToolName } from "./agentic-rag";
 import { orchestrateContext, type ContextOrchestratorDiagnostics } from "./context-orchestrator";
+import { detectAnswerMode, expandSectionChunks, extractRequirements, validateProcedureAnswer, type AnswerMode } from "./procedure-mode";
+import { buildProcedureMessages, appendValidationWarnings } from "./procedure-prompts";
 import { buildRagMessages, buildToolAugmentedRagMessages } from "./prompts";
 import { retrieveRelevantChunks, type RetrievedChunk } from "./retrieval";
 
@@ -474,9 +476,33 @@ export async function runHybridRagChat(input: {
       trace: undefined,
     };
   const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
-  const chunks = contextOrchestrator.chunks;
-  const sources = chunks.map(({ text: _text, ...source }) => source);
+  let chunks = contextOrchestrator.chunks;
   const chatMode = resolveRagChatMode(input.mode);
+
+  // ── Procedure Mode Detection ──
+  const answerMode: AnswerMode = detectAnswerMode(input.message);
+  let procedureExpansion: Awaited<ReturnType<typeof expandSectionChunks>> | null = null;
+  let procedureRequirements: ReturnType<typeof extractRequirements> | null = null;
+
+  if (answerMode === "procedure") {
+    try {
+      procedureExpansion = await expandSectionChunks({
+        supabase: input.supabase,
+        userId: input.userId,
+        originalChunks: chunks,
+        documentIds: input.documentIds,
+      });
+      if (procedureExpansion.expanded) {
+        chunks = procedureExpansion.sectionChunks;
+        console.log(`[Procedure Mode] Expanded section "${procedureExpansion.sectionHeading}" → ${chunks.length} chunks`);
+      }
+      procedureRequirements = extractRequirements(chunks, procedureExpansion.sectionHeading);
+    } catch (procError) {
+      console.warn(`[Procedure Mode] Expansion failed (falling back to standard): ${procError instanceof Error ? procError.message : "unknown"}`);
+    }
+  }
+
+  const sources = chunks.map(({ text: _text, ...source }) => source);
   const diagnostics = {
     mode: chatMode,
     requestedTopK: input.topK ?? 5,
@@ -530,10 +556,17 @@ export async function runHybridRagChat(input: {
       : { selectedTools: [] as RagToolName[], results: [] as ReturnType<typeof runRagTool>[] };
     if (diagnostics.agentic) diagnostics.agentic.toolUse = toolUse;
     const toolResults = toolUse.results.map((result) => `Tool: ${result.tool}\n${result.summary}`).join("\n\n");
+
+    // ── Choose prompt strategy based on answer mode ──
+    const isProcedure = answerMode === "procedure" && procedureRequirements !== null;
+    const messages = (isProcedure && procedureRequirements)
+      ? buildProcedureMessages(input.message, chunks, procedureRequirements)
+      : (toolResults ? buildToolAugmentedRagMessages(input.message, chunks, toolResults) : buildRagMessages(input.message, chunks));
+
     const llmResult = await generateWithFallback({
-      messages: toolResults ? buildToolAugmentedRagMessages(input.message, chunks, toolResults) : buildRagMessages(input.message, chunks),
-      temperature: 0.2,
-      maxTokens: 2000,
+      messages,
+      temperature: isProcedure ? 0.15 : 0.2,
+      maxTokens: isProcedure ? 4000 : 2000,
     });
 
     const collaborative = collaborativeEnabled
@@ -545,9 +578,18 @@ export async function runHybridRagChat(input: {
         verifierEnabled: reflectionEnabled,
       })
       : undefined;
-    const finalAnswer = collaborative?.answer ?? (reflectionEnabled
+    let finalAnswer = collaborative?.answer ?? (reflectionEnabled
       ? (await reflectAndImproveAnswer({ question: input.message, answer: llmResult.content, chunks })).answer
       : llmResult.content);
+
+    // ── Procedure Mode: Self-validation ──
+    if (isProcedure && procedureRequirements) {
+      const validation = validateProcedureAnswer(finalAnswer, procedureRequirements);
+      if (!validation.passed) {
+        finalAnswer = appendValidationWarnings(finalAnswer, validation);
+        console.log(`[Procedure Mode] Self-check found ${validation.issues.length} issues`);
+      }
+    }
     if (diagnostics.agentic) {
       if (collaborative) {
         diagnostics.agentic.collaborative = collaborative.trace;
@@ -632,33 +674,63 @@ export async function* streamHybridRagChat(input: {
     };
 
   const contextOrchestrator = orchestrateContext({ query: input.message, chunks: retrievalResult.chunks });
-  const chunks = contextOrchestrator.chunks;
+  let chunks = contextOrchestrator.chunks;
+
+  // ── Procedure Mode Detection (streaming) ──
+  const answerMode = detectAnswerMode(input.message);
+  let procedureRequirements: ReturnType<typeof extractRequirements> | null = null;
+
+  if (answerMode === "procedure") {
+    try {
+      const expansion = await expandSectionChunks({
+        supabase: input.supabase,
+        userId: input.userId,
+        originalChunks: chunks,
+        documentIds: input.documentIds,
+      });
+      if (expansion.expanded) {
+        chunks = expansion.sectionChunks;
+        console.log(`[Procedure Mode/Stream] Expanded section "${expansion.sectionHeading}" → ${chunks.length} chunks`);
+      }
+      procedureRequirements = extractRequirements(chunks, expansion.sectionHeading);
+    } catch {
+      // Fall through to standard
+    }
+  }
+
   const sources = chunks.map(({ text: _text, ...source }) => source);
 
   // 2. Emit sources immediately so frontend can show them
   yield `data: ${JSON.stringify({ type: "sources", sources })}\n\n`;
 
-  // 3. Build tool results (fast, rule-based)
-  const toolUseEnabled = agenticEnabled && envFlagEnabled("RAG_TOOL_USE_ENABLED", true);
-  const toolUse = toolUseEnabled
-    ? (() => {
-      const selectedTools = chooseRuleBasedTools(input.message);
-      return {
-        selectedTools,
-        results: selectedTools.map((tool: RagToolName) => runRagTool(tool, input.message, chunks)),
-      };
-    })()
-    : { selectedTools: [] as RagToolName[], results: [] as ReturnType<typeof runRagTool>[] };
+  // 3. Build messages — procedure-specific or standard
+  const isProcedure = answerMode === "procedure" && procedureRequirements !== null;
+  let messages;
 
-  const toolResults = toolUse.results.map((r) => `Tool: ${r.tool}\n${r.summary}`).join("\n\n");
-  const messages = toolResults
-    ? buildToolAugmentedRagMessages(input.message, chunks, toolResults)
-    : buildRagMessages(input.message, chunks);
+  if (isProcedure && procedureRequirements) {
+    messages = buildProcedureMessages(input.message, chunks, procedureRequirements);
+  } else {
+    const toolUseEnabled = agenticEnabled && envFlagEnabled("RAG_TOOL_USE_ENABLED", true);
+    const toolUse = toolUseEnabled
+      ? (() => {
+        const selectedTools = chooseRuleBasedTools(input.message);
+        return {
+          selectedTools,
+          results: selectedTools.map((tool: RagToolName) => runRagTool(tool, input.message, chunks)),
+        };
+      })()
+      : { selectedTools: [] as RagToolName[], results: [] as ReturnType<typeof runRagTool>[] };
+
+    const toolResults = toolUse.results.map((r) => `Tool: ${r.tool}\n${r.summary}`).join("\n\n");
+    messages = toolResults
+      ? buildToolAugmentedRagMessages(input.message, chunks, toolResults)
+      : buildRagMessages(input.message, chunks);
+  }
 
   // 4. Stream LLM tokens
   let fullContent = "";
   try {
-    for await (const chunk of streamWithFallback({ messages, temperature: 0.2, maxTokens: 2000 })) {
+    for await (const chunk of streamWithFallback({ messages, temperature: isProcedure ? 0.15 : 0.2, maxTokens: isProcedure ? 4000 : 2000 })) {
       if (chunk.delta) {
         fullContent += chunk.delta;
         yield `data: ${JSON.stringify({ type: "delta", delta: chunk.delta })}\n\n`;
